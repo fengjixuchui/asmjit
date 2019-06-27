@@ -11,7 +11,14 @@ Complete x86/x64 JIT and Remote Assembler for C++.
 Important
 ---------
 
-At the moment the most work related to asmjit happens in next-wip branch, which should be now used in case that you use either Assembler or Builder tools, however, it's unstable regarding asmjit's Compiler. The current master branch is considered stable, but is frozen until next-wip branch is merged. Also note that next-wip branch is not compatible with master - it moves all classes with X86 prefix into x86 namespaces and contains a lot of minor breaking changes - the transition is straightforward and if you use gitter you can get help instantly in case you face something more complicated.
+There are now two branches new users should decide to use:
+
+  * oldstable - old version that will be maintained until the end of 2019
+  * next-wip - new version that will be merged into master in June 2019
+
+At the moment the most work happens in `next-wip` branch, which should be now used by new projects (and existing projects should migrate as soon as possible). Some changes in next-wip branch are not API compatible with master branch, for example all classes having X86 prefix were moved into `asmjit::x86` namespaces and some other classes were renamed, but almost all changes are cosmetic and transition to the new version should be straightforward. A commercial option for transitioning from old AsmJit to the current/next-wip is also available.
+
+The `oldstable` branch was created for users that cannot migrate at the moment and will be maintained until the end of 2019, and then deleted. So please use `next-wip` branch now and consider switching to it as soon as possible.
 
 Introduction
 ------------
@@ -1750,11 +1757,15 @@ int main(int argc, char* argv[]) {
 Support
 -------
 
-Please consider a donation if you use the project and would like to keep it active in the future.
+AsmJit is an open-source library released under a permissive ZLIB license, which makes it possible to use it freely in any open-source or commercial product. Free support is available through issues and gitter channel, which is very active. Commercial support is currently individual and can be negotiated on demand. It includes consultation, priority bug fixing, review of code that uses AsmJit, porting code to the latest AsmJit, and implementation of new AsmJit features.
+
+If you use AsmJit in a non-commercial project and would like to appreciate the library in the form of a donation you are welcome to support us. Donations are anonymous unless the donor lets us know otherwise. The order and format of listed donors is not guaranteed and may change in the future. Additionally, donations should be considered as an appreciation of past work and not used to gain special privileges in terms of future development. AsmJit authors reserve the right to remove a donor from the list in extreme cases of disruptive behavior against other community members. Diversity of opinions and constructive criticism will always be welcome in the AsmJit community.
+
+Donation Addresses:
 
   * BTC: 14dEp5h8jYSxgXB9vcjE8eh78uweD76o7W
   * ETH: 0xd4f0b9424cF31DF5a5359D029CF3A65c500a581E
-  * Please contact the author if you would like to donate through a different channel or use a different crypto-currency.
+  * Please contact us if you would like to donate through a different channel or to use a different crypto-currency. Wire transfers and SEPA payments are both possible.
 
 Donors:
 
