@@ -2071,7 +2071,7 @@ CaseX86PushPop_Gp:
         }
 
         // Short form - AL, AX, EAX, RAX.
-        if (o0.id() == 0 && !(options & Inst::kOptionLongForm)) {
+        if (rbReg == 0 && !(options & Inst::kOptionLongForm)) {
           opcode &= Opcode::kPP_66 | Opcode::kW;
           opcode |= 0xA8 + (o0.size() != 1);
           goto EmitX86Op;
@@ -2140,7 +2140,10 @@ CaseX86PushPop_Gp:
         opReg = o1.id();
         rmRel = &o0;
 
-        FIXUP_GPB(o1, opReg);
+        if (o1.size() == 1) {
+          FIXUP_GPB(o1, opReg);
+        }
+
         goto EmitX86M;
       }
       break;
