@@ -1,4 +1,4 @@
-// [AsmJit]
+// [AsmJit]you want
 // Machine Code Generation for C++.
 //
 // [License]
@@ -13,13 +13,12 @@
 //   - Tell the CodeHolder to resolve unresolved links and check whether
 //     all links were resolved.
 //   - Relocate the code
-//   - Copy the code to the location you want.
+//   - Copy the code to the destination address.
 
+#include <asmjit/x86.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "./asmjit.h"
 
 using namespace asmjit;
 
@@ -48,8 +47,8 @@ int main(int argc, char* argv[]) {
   code.init(codeInfo);
   code.setLogger(&logger);
 
-  Section* section;
-  Error err = code.newSection(&section, ".data", SIZE_MAX, 0, 8);
+  Section* dataSection;
+  Error err = code.newSection(&dataSection, ".data", SIZE_MAX, 0, 8);
 
   if (err) {
     fail("Failed to create a .data section", err);
@@ -82,7 +81,7 @@ int main(int argc, char* argv[]) {
 
     a.emitEpilog(frame);
 
-    a.section(section);
+    a.section(dataSection);
     a.bind(data);
 
     a.embed(dataArray, sizeof(dataArray));

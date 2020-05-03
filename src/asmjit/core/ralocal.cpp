@@ -4,9 +4,7 @@
 // [License]
 // Zlib - See LICENSE.md file in the package.
 
-#define ASMJIT_EXPORTS
-
-#include "../core/build.h"
+#include "../core/api-build_p.h"
 #ifndef ASMJIT_NO_COMPILER
 
 #include "../core/ralocal_p.h"
@@ -831,6 +829,9 @@ Error RALocalAllocator::spillAfterAllocation(InstNode* node) noexcept {
 }
 
 Error RALocalAllocator::allocBranch(InstNode* node, RABlock* target, RABlock* cont) noexcept {
+  // TODO: This should be used to make the branch allocation better.
+  ASMJIT_UNUSED(cont);
+
   // The cursor must point to the previous instruction for a possible instruction insertion.
   _cc->_setCursor(node->prev());
 

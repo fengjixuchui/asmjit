@@ -7,7 +7,7 @@
 #ifndef _ASMJIT_CORE_RADEFS_P_H
 #define _ASMJIT_CORE_RADEFS_P_H
 
-#include "../core/build.h"
+#include "../core/api-config.h"
 #ifndef ASMJIT_NO_COMPILER
 
 #include "../core/compiler.h"
@@ -462,7 +462,10 @@ public:
   //! \name Overloaded Operators
   //! \{
 
-  inline RALiveSpan& operator=(const RALiveSpan& other) = default;
+  inline RALiveSpan& operator=(const RALiveSpan& other) {
+    init(other);
+    return *this;
+  }
 
   //! \}
 };
@@ -685,9 +688,8 @@ public:
 struct LiveRegData {
   uint32_t id;
 
-  inline LiveRegData() noexcept : id(BaseReg::kIdBad) {}
-  inline explicit LiveRegData(uint32_t id) noexcept : id(id) {}
-  inline explicit LiveRegData(const LiveRegData& other) noexcept : id(other.id) {}
+  inline explicit LiveRegData(uint32_t id = BaseReg::kIdBad) noexcept : id(id) {}
+  inline LiveRegData(const LiveRegData& other) noexcept : id(other.id) {}
 
   inline void init(const LiveRegData& other) noexcept { id = other.id; }
 

@@ -4,9 +4,7 @@
 // [License]
 // Zlib - See LICENSE.md file in the package.
 
-#define ASMJIT_EXPORTS
-
-#include "../core/build.h"
+#include "../core/api-build_p.h"
 #ifdef ASMJIT_BUILD_X86
 
 #include "../core/misc_p.h"
@@ -139,6 +137,18 @@ UNIT(x86_operand) {
   EXPECT(ymm5.cloneAs(zmm13) == zmm5);
   EXPECT(zmm6.cloneAs(xmm14) == xmm6);
   EXPECT(zmm6.cloneAs(ymm15) == ymm6);
+
+  EXPECT(xmm7.xmm() == xmm7);
+  EXPECT(xmm7.ymm() == ymm7);
+  EXPECT(xmm7.zmm() == zmm7);
+
+  EXPECT(ymm7.xmm() == xmm7);
+  EXPECT(ymm7.ymm() == ymm7);
+  EXPECT(ymm7.zmm() == zmm7);
+
+  EXPECT(zmm7.xmm() == xmm7);
+  EXPECT(zmm7.ymm() == ymm7);
+  EXPECT(zmm7.zmm() == zmm7);
 
   INFO("Checking x86::FpMm register properties");
   EXPECT(Mm().isReg() == true);

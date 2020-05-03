@@ -7,7 +7,7 @@
 #ifndef _ASMJIT_CORE_COMPILER_H
 #define _ASMJIT_CORE_COMPILER_H
 
-#include "../core/build.h"
+#include "../core/api-config.h"
 #ifndef ASMJIT_NO_COMPILER
 
 #include "../core/assembler.h"
@@ -281,6 +281,14 @@ public:
   //! \{
 
   ASMJIT_API Error _newStack(BaseMem& out, uint32_t size, uint32_t alignment, const char* name = nullptr);
+
+  //! Updates the stack size of a stack created by `_newStack()` by its `virtId`.
+  ASMJIT_API Error setStackSize(uint32_t virtId, uint32_t newSize, uint32_t newAlignment = 0) noexcept;
+
+  //! Updates the stack size of a stack created by `_newStack()`.
+  inline Error setStackSize(const BaseMem& mem, uint32_t newSize, uint32_t newAlignment = 0) noexcept {
+    return setStackSize(mem.id(), newSize, newAlignment);
+  }
 
   //! \}
 

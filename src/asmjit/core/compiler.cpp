@@ -4,9 +4,7 @@
 // [License]
 // Zlib - See LICENSE.md file in the package.
 
-#define ASMJIT_EXPORTS
-
-#include "../core/build.h"
+#include "../core/api-build_p.h"
 #ifndef ASMJIT_NO_COMPILER
 
 #include "../core/assembler.h"
@@ -14,6 +12,7 @@
 #include "../core/cpuinfo.h"
 #include "../core/logging.h"
 #include "../core/rapass_p.h"
+#include "../core/rastack_p.h"
 #include "../core/support.h"
 #include "../core/type.h"
 
@@ -444,6 +443,35 @@ Error BaseCompiler::_newStack(BaseMem& out, uint32_t size, uint32_t alignment, c
 
   // Set the memory operand to GPD/GPQ and its id to VirtReg.
   out = BaseMem(BaseMem::Decomposed { _gpRegInfo.type(), vReg->id(), BaseReg::kTypeNone, 0, 0, 0, BaseMem::kSignatureMemRegHomeFlag });
+  return kErrorOk;
+}
+
+Error BaseCompiler::setStackSize(uint32_t virtId, uint32_t newSize, uint32_t newAlignment) noexcept {
+  if (!isVirtIdValid(virtId))
+    return DebugUtils::errored(kErrorInvalidVirtId);
+
+  if (newAlignment && !Support::isPowerOf2(newAlignment))
+    return reportError(DebugUtils::errored(kErrorInvalidArgument));
+
+  if (newAlignment > 64)
+    newAlignment = 64;
+
+  VirtReg* vReg = virtRegById(virtId);
+  if (newSize)
+    vReg->_virtSize = newSize;
+
+  if (newAlignment)
+    vReg->_alignment = uint8_t(newAlignment);
+
+  // This is required if the RAPass is already running. There is a chance that
+  // a stack-slot has been already allocated and in that case it has to be
+  // updated as well, otherwise we would allocate wrong amount of memory.
+  RAWorkReg* workReg = vReg->_workReg;
+  if (workReg && workReg->_stackSlot) {
+    workReg->_stackSlot->_size = vReg->virtSize();
+    workReg->_stackSlot->_alignment = vReg->alignment();
+  }
+
   return kErrorOk;
 }
 

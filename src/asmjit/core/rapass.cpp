@@ -4,9 +4,7 @@
 // [License]
 // Zlib - See LICENSE.md file in the package.
 
-#define ASMJIT_EXPORTS
-
-#include "../core/build.h"
+#include "../core/api-build_p.h"
 #ifndef ASMJIT_NO_COMPILER
 
 #include "../core/ralocal_p.h"
@@ -1216,9 +1214,9 @@ ASMJIT_FAVOR_SPEED Error RAPass::binPack(uint32_t group) noexcept {
       workReg->markStackPreferred();
 
     ASMJIT_RA_LOG_COMPLEX({
-      uint32_t numWorkRegs = workRegs.size();
+      uint32_t count = workRegs.size();
       sb.clear();
-      sb.appendFormat("  Unassigned (%u): ", numWorkRegs);
+      sb.appendFormat("  Unassigned (%u): ", count);
       for (i = 0; i < numWorkRegs; i++) {
         RAWorkReg* workReg = workRegs[i];
         if (i) sb.appendString(", ");
@@ -1431,11 +1429,12 @@ Error RAPass::useTemporaryMem(BaseMem& out, uint32_t size, uint32_t alignment) n
   }
   else {
     ASMJIT_ASSERT(_temporaryMem.as<BaseMem>().isRegHome());
-    uint32_t virtId = _temporaryMem.as<BaseMem>().baseId();
 
+    uint32_t virtId = _temporaryMem.as<BaseMem>().baseId();
     VirtReg* virtReg = cc()->virtRegById(virtId);
-    virtReg->_virtSize = Support::max(virtReg->virtSize(), size);
-    virtReg->_alignment = uint8_t(Support::max(virtReg->alignment(), alignment));
+
+    cc()->setStackSize(virtId, Support::max(virtReg->virtSize(), size),
+                               Support::max(virtReg->alignment(), alignment));
   }
 
   out = _temporaryMem.as<BaseMem>();

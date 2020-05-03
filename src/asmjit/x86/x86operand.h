@@ -381,9 +381,9 @@ inline GpbHi Gp::r8Hi() const noexcept { return GpbHi(id()); }
 inline Gpw Gp::r16() const noexcept { return Gpw(id()); }
 inline Gpd Gp::r32() const noexcept { return Gpd(id()); }
 inline Gpq Gp::r64() const noexcept { return Gpq(id()); }
-inline Xmm Vec::xmm() const noexcept { return Xmm(*this, id()); }
-inline Ymm Vec::ymm() const noexcept { return Ymm(*this, id()); }
-inline Zmm Vec::zmm() const noexcept { return Zmm(*this, id()); }
+inline Xmm Vec::xmm() const noexcept { return Xmm(id()); }
+inline Ymm Vec::ymm() const noexcept { return Ymm(id()); }
+inline Zmm Vec::zmm() const noexcept { return Zmm(id()); }
 //! \endcond
 
 // ============================================================================
@@ -477,13 +477,13 @@ public:
   //! The memory must have a valid index register otherwise the result will be wrong.
   inline Reg indexReg() const noexcept { return Reg::fromTypeAndId(indexType(), indexId()); }
 
-  constexpr Mem _1to1() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To1 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to2() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To2 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to4() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To4 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to8() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To8 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to16() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To16 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to32() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To32 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
-  constexpr Mem _1to64() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To64 << kSignatureMemBroadcastShift), _baseId, _data32[0], _data32[1]); }
+  constexpr Mem _1to1() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To1 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to2() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To2 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to4() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To4 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to8() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To8 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to16() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To16 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to32() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To32 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
+  constexpr Mem _1to64() const noexcept { return Mem(Globals::Init, (_signature & ~kSignatureMemBroadcastMask) | (kBroadcast1To64 << kSignatureMemBroadcastShift), _baseId, _data[0], _data[1]); }
 
   // --------------------------------------------------------------------------
   // [Mem]
