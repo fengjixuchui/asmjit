@@ -1,8 +1,25 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
 #include "../core/api-build_p.h"
 #ifdef ASMJIT_BUILD_X86
@@ -51,7 +68,7 @@ static inline uint32_t x86KmovFromSize(uint32_t size) noexcept {
 // ============================================================================
 
 ASMJIT_FAVOR_SIZE Error X86Internal::initFuncDetail(FuncDetail& func, const FuncSignature& sign, uint32_t gpSize) noexcept {
-  ASMJIT_UNUSED(sign);
+  DebugUtils::unused(sign);
 
   const CallConv& cc = func.callConv();
   uint32_t archId = cc.archId();
@@ -316,10 +333,10 @@ public:
     }
 
     inline void unassign(uint32_t varId, uint32_t regId) noexcept {
-      ASMJIT_UNUSED(varId);
       ASMJIT_ASSERT(isAssigned(regId));
       ASMJIT_ASSERT(_physToVarId[regId] == varId);
 
+      DebugUtils::unused(varId);
       _physToVarId[regId] = uint8_t(kVarIdNone);
       _assignedRegs ^= Support::bitMask(regId);
     }
@@ -1373,13 +1390,13 @@ ASMJIT_FAVOR_SIZE Error X86Internal::emitArgsAssignment(Emitter* emitter, const 
   X86FuncArgsContext ctx;
   ASMJIT_PROPAGATE(ctx.initWorkData(frame, args));
 
-  #ifdef ASMJIT_DUMP_ARGS_ASSIGNMENT
+#ifdef ASMJIT_DUMP_ARGS_ASSIGNMENT
   {
     String sb;
     dumpAssignment(sb, ctx);
     printf("%s\n", sb.data());
   }
-  #endif
+#endif
 
   uint32_t archId = ctx.archId();
   uint32_t varCount = ctx._varCount;

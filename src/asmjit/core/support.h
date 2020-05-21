@@ -1,11 +1,28 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef _ASMJIT_CORE_SUPPORT_H
-#define _ASMJIT_CORE_SUPPORT_H
+#ifndef ASMJIT_CORE_SUPPORT_H_INCLUDED
+#define ASMJIT_CORE_SUPPORT_H_INCLUDED
 
 #include "../core/globals.h"
 
@@ -903,8 +920,8 @@ static inline void writeU64uBE(void* p, uint64_t x) noexcept { writeU64xBE<1>(p,
 // [asmjit::Support - Operators]
 // ============================================================================
 
-struct Set    { template<typename T> static inline T op(T x, T y) noexcept { ASMJIT_UNUSED(x); return  y; } };
-struct SetNot { template<typename T> static inline T op(T x, T y) noexcept { ASMJIT_UNUSED(x); return ~y; } };
+struct Set    { template<typename T> static inline T op(T x, T y) noexcept { DebugUtils::unused(x); return  y; } };
+struct SetNot { template<typename T> static inline T op(T x, T y) noexcept { DebugUtils::unused(x); return ~y; } };
 struct And    { template<typename T> static inline T op(T x, T y) noexcept { return  x &  y; } };
 struct AndNot { template<typename T> static inline T op(T x, T y) noexcept { return  x & ~y; } };
 struct NotAnd { template<typename T> static inline T op(T x, T y) noexcept { return ~x &  y; } };
@@ -1257,9 +1274,13 @@ namespace Internal {
           ASMJIT_ASSERT(stackptr <= stack + kStackSize);
         }
         else {
-          iSort(base, (size_t)(end - base), cmp);
+          // UB sanitizer doesn't like applying offset to a nullptr base.
+          if (base != end)
+            iSort(base, (size_t)(end - base), cmp);
+
           if (stackptr == stack)
             break;
+
           end = *--stackptr;
           base = *--stackptr;
         }
@@ -1387,4 +1408,4 @@ struct Temporary {
 
 ASMJIT_END_NAMESPACE
 
-#endif // _ASMJIT_CORE_SUPPORT_H
+#endif // ASMJIT_CORE_SUPPORT_H_INCLUDED

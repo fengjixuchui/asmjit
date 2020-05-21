@@ -1,8 +1,25 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
 #include "../core/api-build_p.h"
 #ifdef ASMJIT_BUILD_X86
@@ -393,11 +410,11 @@ public:
 
     ASMJIT_ASSERT(immSize == 1 || immSize == 4);
 
-    #if ASMJIT_ARCH_BITS >= 64
+#if ASMJIT_ARCH_BITS >= 64
     uint64_t imm = uint64_t(immValue);
-    #else
+#else
     uint32_t imm = uint32_t(immValue & 0xFFFFFFFFu);
-    #endif
+#endif
 
     // Many instructions just use a single byte immediate, so make it fast.
     emit8(imm & 0xFFu);
@@ -415,11 +432,11 @@ public:
     if (!immSize)
       return;
 
-    #if ASMJIT_ARCH_BITS >= 64
+#if ASMJIT_ARCH_BITS >= 64
     uint64_t imm = uint64_t(immValue);
-    #else
+#else
     uint32_t imm = uint32_t(immValue & 0xFFFFFFFFu);
-    #endif
+#endif
 
     // Many instructions just use a single byte immediate, so make it fast.
     emit8(imm & 0xFFu);
@@ -440,12 +457,12 @@ public:
     // Can be 1, 2, 4 or 8 bytes, this handles the remaining high DWORD of an 8-byte immediate.
     ASMJIT_ASSERT(immSize == 4);
 
-    #if ASMJIT_ARCH_BITS >= 64
+#if ASMJIT_ARCH_BITS >= 64
     imm >>= 8;
     emit32uLE(uint32_t(imm));
-    #else
+#else
     emit32uLE(uint32_t((uint64_t(immValue) >> 32) & 0xFFFFFFFFu));
-    #endif
+#endif
   }
 };
 
@@ -594,8 +611,8 @@ ASMJIT_FAVOR_SPEED Error Assembler::_emit(uint32_t instId, const Operand_& o0, c
     if (ASMJIT_UNLIKELY(err))
       goto Failed;
 
+#ifndef ASMJIT_NO_VALIDATION
     // Strict validation.
-    #ifndef ASMJIT_NO_VALIDATION
     if (hasEmitterOption(kOptionStrictValidation)) {
       Operand_ opArray[Globals::kMaxOpCount];
 
@@ -616,7 +633,7 @@ ASMJIT_FAVOR_SPEED Error Assembler::_emit(uint32_t instId, const Operand_& o0, c
       err = InstAPI::validate(archId(), BaseInst(instId, options, _extraReg), opArray, Globals::kMaxOpCount);
       if (ASMJIT_UNLIKELY(err)) goto Failed;
     }
-    #endif
+#endif
 
     uint32_t iFlags = instInfo->flags();
 
@@ -4564,10 +4581,10 @@ EmitRel:
 
 EmitDone:
   if (ASMJIT_UNLIKELY(options & Inst::kOptionReserved)) {
-    #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
     if (hasEmitterOption(kOptionLoggingEnabled))
       _emitLog(instId, options, o0, o1, o2, o3, relSize, immSize, writer.cursor());
-    #endif
+#endif
   }
 
   resetInstOptions();
@@ -4681,7 +4698,7 @@ Error Assembler::align(uint32_t alignMode, uint32_t alignment) {
     writer.done(this);
   }
 
-  #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
   if (hasEmitterOption(kOptionLoggingEnabled)) {
     Logger* logger = _code->logger();
     StringTmp<128> sb;
@@ -4689,7 +4706,7 @@ Error Assembler::align(uint32_t alignMode, uint32_t alignment) {
     sb.appendFormat("align %u\n", alignment);
     logger->log(sb);
   }
-  #endif
+#endif
 
   return kErrorOk;
 }

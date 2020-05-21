@@ -1,8 +1,25 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
 // ----------------------------------------------------------------------------
 // IMPORTANT: AsmJit now uses an external instruction database to populate
@@ -42,7 +59,7 @@ ASMJIT_BEGIN_SUB_NAMESPACE(x86)
 
 #ifndef ASMJIT_NO_TEXT
 Error InstInternal::instIdToString(uint32_t archId, uint32_t instId, String& output) noexcept {
-  ASMJIT_UNUSED(archId);
+  DebugUtils::unused(archId);
 
   if (ASMJIT_UNLIKELY(!Inst::isDefinedId(instId)))
     return DebugUtils::errored(kErrorInvalidInstruction);
@@ -52,7 +69,7 @@ Error InstInternal::instIdToString(uint32_t archId, uint32_t instId, String& out
 }
 
 uint32_t InstInternal::stringToInstId(uint32_t archId, const char* s, size_t len) noexcept {
-  ASMJIT_UNUSED(archId);
+  DebugUtils::unused(archId);
 
   if (ASMJIT_UNLIKELY(!s))
     return Inst::kIdNone;
@@ -759,7 +776,7 @@ static ASMJIT_INLINE void rwZeroExtendGp(OpRWInfo& opRwInfo, const Gp& reg, uint
 }
 
 static ASMJIT_INLINE void rwZeroExtendAvxVec(OpRWInfo& opRwInfo, const Vec& reg) noexcept {
-  ASMJIT_UNUSED(reg);
+  DebugUtils::unused(reg);
 
   uint64_t msk = ~Support::fillTrailingBits(opRwInfo.writeByteMask());
   if (msk) {
@@ -1344,7 +1361,7 @@ static RegAnalysis InstInternal_regAnalysis(const Operand_* operands, uint32_t o
 
 Error InstInternal::queryFeatures(uint32_t archId, const BaseInst& inst, const Operand_* operands, uint32_t opCount, BaseFeatures& out) noexcept {
   // Only called when `archId` matches X86 family.
-  ASMJIT_UNUSED(archId);
+  DebugUtils::unused(archId);
   ASMJIT_ASSERT(ArchInfo::isX86Family(archId));
 
   // Get the instruction data.

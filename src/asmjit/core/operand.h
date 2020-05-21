@@ -1,11 +1,28 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef _ASMJIT_CORE_OPERAND_H
-#define _ASMJIT_CORE_OPERAND_H
+#ifndef ASMJIT_CORE_OPERAND_H_INCLUDED
+#define ASMJIT_CORE_OPERAND_H_INCLUDED
 
 #include "../core/support.h"
 
@@ -129,27 +146,6 @@ struct Operand_ {
     kDataImmValueLo = ASMJIT_ARCH_LE ? 0 : 1,
     kDataImmValueHi = ASMJIT_ARCH_LE ? 1 : 0
   };
-
-  /*
-  //! Memory operand data.
-  struct MemData {
-    //! Index register id.
-    uint32_t indexId;
-    //! Low part of 64-bit offset (or 32-bit offset).
-    uint32_t offsetLo32;
-  };
-
-  //! Additional data used by some operands.
-  union {
-    //! 32-bit data (used either by immediate or as a 32-bit view).
-    uint32_t _data32[2];
-    //! 64-bit data (used either by immediate or as a 64-bit view).
-    uint64_t _data64;
-
-    //! Memory address data.
-    MemData _mem;
-  };
-  */
 
   //! Operand types that can be encoded in `Operand`.
   enum OpType : uint32_t {
@@ -1338,4 +1334,4 @@ static constexpr Imm imm(T val) noexcept {
 
 ASMJIT_END_NAMESPACE
 
-#endif // _ASMJIT_CORE_OPERAND_H
+#endif // ASMJIT_CORE_OPERAND_H_INCLUDED

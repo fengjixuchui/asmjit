@@ -1,8 +1,25 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
 #include <asmjit/x86.h>
 #include <setjmp.h>
@@ -48,7 +65,7 @@ class SimpleErrorHandler : public ErrorHandler {
 public:
   SimpleErrorHandler() : _err(kErrorOk) {}
   virtual void handleError(Error err, const char* message, BaseEmitter* origin) {
-    ASMJIT_UNUSED(origin);
+    DebugUtils::unused(origin);
     _err = err;
     _message.assignString(message);
   }
@@ -137,7 +154,7 @@ void X86TestApp::showInfo() {
 }
 
 int X86TestApp::run() {
-  #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
   uint32_t kFormatFlags = FormatOptions::kFlagMachineCode   |
                           FormatOptions::kFlagExplainImms   |
                           FormatOptions::kFlagRegCasts      |
@@ -150,7 +167,7 @@ int X86TestApp::run() {
 
   StringLogger stringLogger;
   stringLogger.addFlags(kFormatFlags);
-  #endif
+#endif
 
   for (X86Test* test : _tests) {
     JitRuntime runtime;
@@ -160,7 +177,7 @@ int X86TestApp::run() {
     code.init(runtime.codeInfo());
     code.setErrorHandler(&errorHandler);
 
-    #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
     if (_verbose) {
       code.setLogger(&fileLogger);
     }
@@ -168,13 +185,13 @@ int X86TestApp::run() {
       stringLogger.clear();
       code.setLogger(&stringLogger);
     }
-    #endif
+#endif
 
     printf("[Test] %s", test->name());
 
-    #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
     if (_verbose) printf("\n");
-    #endif
+#endif
 
     x86::Compiler cc(&code);
     test->compile(cc);
@@ -185,7 +202,7 @@ int X86TestApp::run() {
     if (!err)
       err = cc.finalize();
 
-    #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
     if (_dumpAsm) {
       if (!_verbose) printf("\n");
 
@@ -193,7 +210,7 @@ int X86TestApp::run() {
       cc.dump(sb, kFormatFlags);
       printf("%s", sb.data());
     }
-    #endif
+#endif
 
     if (err == kErrorOk)
       err = runtime.add(&func, &code);
@@ -213,9 +230,9 @@ int X86TestApp::run() {
       else {
         if (!_verbose) printf(" [FAILED]\n");
 
-        #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
         if (!_verbose) printf("%s", stringLogger.data());
-        #endif
+#endif
 
         printf("[Status]\n");
         printf("  Returned: %s\n", result.data());
@@ -232,9 +249,9 @@ int X86TestApp::run() {
     else {
       if (!_verbose) printf(" [FAILED]\n");
 
-      #ifndef ASMJIT_NO_LOGGING
+#ifndef ASMJIT_NO_LOGGING
       if (!_verbose) printf("%s", stringLogger.data());
-      #endif
+#endif
 
       printf("[Status]\n");
       printf("  ERROR 0x%08X: %s\n", unsigned(err), errorHandler._message.data());
@@ -441,8 +458,7 @@ public:
   }
 
   virtual bool run(void* _func, String& result, String& expect) {
-    ASMJIT_UNUSED(result);
-    ASMJIT_UNUSED(expect);
+    DebugUtils::unused(result, expect);
 
     typedef void(*Func)(void);
     Func func = ptr_as_func<Func>(_func);
@@ -472,8 +488,7 @@ public:
   }
 
   virtual bool run(void* _func, String& result, String& expect) {
-    ASMJIT_UNUSED(result);
-    ASMJIT_UNUSED(expect);
+    DebugUtils::unused(result, expect);
 
     typedef void (*Func)(void);
     Func func = ptr_as_func<Func>(_func);
@@ -581,8 +596,7 @@ public:
   }
 
   virtual bool run(void* _func, String& result, String& expect) {
-    ASMJIT_UNUSED(result);
-    ASMJIT_UNUSED(expect);
+    DebugUtils::unused(result, expect);
 
     typedef void (*Func)(void);
     Func func = ptr_as_func<Func>(_func);
@@ -740,6 +754,125 @@ public:
     expect.appendString("ret={}");
 
     return true;
+  }
+};
+
+// ============================================================================
+// [X86Test_JumpTable]
+// ============================================================================
+
+class X86Test_JumpTable : public X86Test {
+public:
+  bool _annotated;
+
+  X86Test_JumpTable(bool annotated)
+    : X86Test("X86Test_JumpTable"),
+      _annotated(annotated) {
+    _name.assignFormat("JumpTable {%s}", annotated ? "Annotated" : "Unknown Reg/Mem");
+  }
+
+  enum Operator {
+    kOperatorAdd = 0,
+    kOperatorSub = 1,
+    kOperatorMul = 2,
+    kOperatorDiv = 3
+  };
+
+  static void add(X86TestApp& app) {
+    app.add(new X86Test_JumpTable(false));
+    app.add(new X86Test_JumpTable(true));
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<float, float, float, uint32_t>(CallConv::kIdHost));
+
+    x86::Xmm a = cc.newXmmSs("a");
+    x86::Xmm b = cc.newXmmSs("b");
+    x86::Gp op = cc.newUInt32("op");
+    x86::Gp target = cc.newIntPtr("target");
+    x86::Gp offset = cc.newIntPtr("offset");
+
+    Label L_End = cc.newLabel();
+
+    Label L_Table = cc.newLabel();
+    Label L_Add = cc.newLabel();
+    Label L_Sub = cc.newLabel();
+    Label L_Mul = cc.newLabel();
+    Label L_Div = cc.newLabel();
+
+    cc.setArg(0, a);
+    cc.setArg(1, b);
+    cc.setArg(2, op);
+
+    cc.lea(offset, x86::ptr(L_Table));
+    if (cc.is64Bit())
+      cc.movsxd(target, x86::dword_ptr(offset, op.cloneAs(offset), 2));
+    else
+      cc.mov(target, x86::dword_ptr(offset, op.cloneAs(offset), 2));
+    cc.add(target, offset);
+
+    // JumpAnnotation allows to annotate all possible jump targets of
+    // instructions where it cannot be deduced from operands.
+    if (_annotated) {
+      JumpAnnotation* annotation = cc.newJumpAnnotation();
+      annotation->addLabel(L_Add);
+      annotation->addLabel(L_Sub);
+      annotation->addLabel(L_Mul);
+      annotation->addLabel(L_Div);
+      cc.jmp(target, annotation);
+    }
+    else {
+      cc.jmp(target);
+    }
+
+    cc.bind(L_Add);
+    cc.addss(a, b);
+    cc.jmp(L_End);
+
+    cc.bind(L_Sub);
+    cc.subss(a, b);
+    cc.jmp(L_End);
+
+    cc.bind(L_Mul);
+    cc.mulss(a, b);
+    cc.jmp(L_End);
+
+    cc.bind(L_Div);
+    cc.divss(a, b);
+
+    cc.bind(L_End);
+    cc.ret(a);
+
+    cc.endFunc();
+
+    cc.bind(L_Table);
+    cc.embedLabelDelta(L_Add, L_Table, 4);
+    cc.embedLabelDelta(L_Sub, L_Table, 4);
+    cc.embedLabelDelta(L_Mul, L_Table, 4);
+    cc.embedLabelDelta(L_Div, L_Table, 4);
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef float (*Func)(float, float, uint32_t);
+    Func func = ptr_as_func<Func>(_func);
+
+    float results[4];
+    float expected[4];
+
+    results[0] = func(33.0f, 14.0f, kOperatorAdd);
+    results[1] = func(33.0f, 14.0f, kOperatorSub);
+    results[2] = func(10.0f, 6.0f, kOperatorMul);
+    results[3] = func(80.0f, 8.0f, kOperatorDiv);
+
+    expected[0] = 47.0f;
+    expected[1] = 19.0f;
+    expected[2] = 60.0f;
+    expected[3] = 10.0f;
+
+    result.assignFormat("ret={%f, %f, %f, %f}", results[0], results[1], results[2], results[3]);
+    expect.assignFormat("ret={%f, %f, %f, %f}", expected[0], expected[1], expected[2], expected[3]);
+
+    return result == expect;
   }
 };
 
@@ -3967,6 +4100,7 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_JumpMany>();
   app.addT<X86Test_JumpUnreachable1>();
   app.addT<X86Test_JumpUnreachable2>();
+  app.addT<X86Test_JumpTable>();
 
   // Alloc tests.
   app.addT<X86Test_AllocBase>();

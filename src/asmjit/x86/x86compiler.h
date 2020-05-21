@@ -1,11 +1,28 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef _ASMJIT_X86_X86COMPILER_H
-#define _ASMJIT_X86_X86COMPILER_H
+#ifndef ASMJIT_X86_X86COMPILER_H_INCLUDED
+#define ASMJIT_X86_X86COMPILER_H_INCLUDED
 
 #include "../core/api-config.h"
 #ifndef ASMJIT_NO_COMPILER
@@ -48,7 +65,8 @@ public:
     _newRegFmt(OUT, PARAM, FORMAT, ARGS)
 #else
 # define ASMJIT_NEW_REG_FMT(OUT, PARAM, FORMAT, ARGS)                         \
-    ASMJIT_UNUSED(FORMAT);                                                    \
+    DebugUtils::unused(FORMAT);                                               \
+    DebugUtils::unused(std::forward<Args>(args)...);                          \
     _newReg(OUT, PARAM)
 #endif
 
@@ -218,15 +236,15 @@ public:
   //! \{
 
   //! Call a function.
-  inline FuncCallNode* call(const Gp& dst, const FuncSignature& sign) { return addCall(Inst::kIdCall, dst, sign); }
+  inline FuncCallNode* call(const Gp& target, const FuncSignature& sign) { return addCall(Inst::kIdCall, target, sign); }
   //! \overload
-  inline FuncCallNode* call(const Mem& dst, const FuncSignature& sign) { return addCall(Inst::kIdCall, dst, sign); }
+  inline FuncCallNode* call(const Mem& target, const FuncSignature& sign) { return addCall(Inst::kIdCall, target, sign); }
   //! \overload
-  inline FuncCallNode* call(const Label& label, const FuncSignature& sign) { return addCall(Inst::kIdCall, label, sign); }
+  inline FuncCallNode* call(const Label& target, const FuncSignature& sign) { return addCall(Inst::kIdCall, target, sign); }
   //! \overload
-  inline FuncCallNode* call(const Imm& dst, const FuncSignature& sign) { return addCall(Inst::kIdCall, dst, sign); }
+  inline FuncCallNode* call(const Imm& target, const FuncSignature& sign) { return addCall(Inst::kIdCall, target, sign); }
   //! \overload
-  inline FuncCallNode* call(uint64_t dst, const FuncSignature& sign) { return addCall(Inst::kIdCall, Imm(int64_t(dst)), sign); }
+  inline FuncCallNode* call(uint64_t target, const FuncSignature& sign) { return addCall(Inst::kIdCall, Imm(int64_t(target)), sign); }
 
   //! Return.
   inline FuncRetNode* ret() { return addRet(Operand(), Operand()); }
@@ -234,6 +252,16 @@ public:
   inline FuncRetNode* ret(const BaseReg& o0) { return addRet(o0, Operand()); }
   //! \overload
   inline FuncRetNode* ret(const BaseReg& o0, const BaseReg& o1) { return addRet(o0, o1); }
+
+  //! \}
+
+  //! \name Jump Tables Support
+  //! \{
+
+  using EmitterExplicitT<Compiler>::jmp;
+
+  inline Error jmp(const BaseReg& target, JumpAnnotation* annotation) { return emitAnnotatedJump(Inst::kIdJmp, target, annotation); }
+  inline Error jmp(const BaseMem& target, JumpAnnotation* annotation) { return emitAnnotatedJump(Inst::kIdJmp, target, annotation); }
 
   //! \}
 
@@ -257,4 +285,4 @@ public:
 ASMJIT_END_SUB_NAMESPACE
 
 #endif // !ASMJIT_NO_COMPILER
-#endif // _ASMJIT_X86_X86COMPILER_H
+#endif // ASMJIT_X86_X86COMPILER_H_INCLUDED

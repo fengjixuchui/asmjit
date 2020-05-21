@@ -1,11 +1,28 @@
-// [AsmJit]
-// Machine Code Generation for C++.
+// AsmJit - Machine code generation for C++
 //
-// [License]
-// Zlib - See LICENSE.md file in the package.
+//  * Official AsmJit Home Page: https://asmjit.com
+//  * Official Github Repository: https://github.com/asmjit/asmjit
+//
+// Copyright (c) 2008-2020 The AsmJit Authors
+//
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+//
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+//
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef _ASMJIT_CORE_API_CONFIG_H
-#define _ASMJIT_CORE_API_CONFIG_H
+#ifndef ASMJIT_CORE_API_CONFIG_H_INCLUDED
+#define ASMJIT_CORE_API_CONFIG_H_INCLUDED
 
 // ============================================================================
 // [asmjit::Version]
@@ -65,8 +82,13 @@
 // #define ASMJIT_NO_TEXT            // Disable everything that contains text
 //                                   // representation (instructions, errors, ...).
 // #define ASMJIT_NO_VALIDATION      // Disable validation API and options.
-// #define ASMJIT_NO_INTROSPECTION   // Disable API related to instruction database
+// #define ASMJIT_NO_INTROSPECTION   // Disable API related to instruction database.
 //                                   // (validation, cpu features, rw-info, etc).
+
+// ASMJIT_NO_BUILDER implies ASMJIT_NO_COMPILER.
+#if defined(ASMJIT_NO_BUILDER) && !defined(ASMJIT_NO_COMPILER)
+  #define ASMJIT_NO_COMPILER
+#endif
 
 // Prevent compile-time errors caused by misconfiguration.
 #if defined(ASMJIT_NO_TEXT) && !defined(ASMJIT_NO_LOGGING)
@@ -404,8 +426,6 @@
   #define ASMJIT_FALLTHROUGH ((void)0) /* fallthrough */
 #endif
 
-#define ASMJIT_UNUSED(X) (void)(X)
-
 // Utilities.
 #define ASMJIT_OFFSET_OF(STRUCT, MEMBER) ((int)(intptr_t)((const char*)&((const STRUCT*)0x100)->MEMBER) - 0x100)
 #define ASMJIT_ARRAY_SIZE(X) uint32_t(sizeof(X) / sizeof(X[0]))
@@ -498,43 +518,16 @@
   public:
 
 // ============================================================================
-// [asmjit::Build - Globals - Build-Only]
-// ============================================================================
-
-// Internal macros that are only used when building AsmJit itself.
-#ifdef ASMJIT_EXPORTS
-  #if !defined(ASMJIT_BUILD_DEBUG) && ASMJIT_CXX_GNU >= ASMJIT_CXX_MAKE_VER(4, 4, 0)
-    #define ASMJIT_FAVOR_SIZE  __attribute__((__optimize__("Os")))
-    #define ASMJIT_FAVOR_SPEED __attribute__((__optimize__("O3")))
-  #elif ASMJIT_CXX_HAS_ATTRIBUTE(__minsize__, 0)
-    #define ASMJIT_FAVOR_SIZE __attribute__((__minsize__))
-    #define ASMJIT_FAVOR_SPEED
-  #else
-    #define ASMJIT_FAVOR_SIZE
-    #define ASMJIT_FAVOR_SPEED
-  #endif
-
-  // Only turn-off these warnings when building asmjit itself.
-  #ifdef _MSC_VER
-    #ifndef _CRT_SECURE_NO_DEPRECATE
-      #define _CRT_SECURE_NO_DEPRECATE
-    #endif
-    #ifndef _CRT_SECURE_NO_WARNINGS
-      #define _CRT_SECURE_NO_WARNINGS
-    #endif
-  #endif
-#endif
-
-// ============================================================================
 // [asmjit::Build - Globals - Cleanup]
 // ============================================================================
 
-// Undefine everything that is not used by AsmJit outside of `build.h` and that
-// is considered private.
-#undef ASMJIT_CXX_CLANG
-#undef ASMJIT_CXX_GNU
-#undef ASMJIT_CXX_INTEL
-#undef ASMJIT_CXX_MSC
-#undef ASMJIT_CXX_MAKE_VER
+// Try to cleanup things not used in other public headers.
+#ifndef ASMJIT_EXPORTS
+  #undef ASMJIT_CXX_CLANG
+  #undef ASMJIT_CXX_GNU
+  #undef ASMJIT_CXX_INTEL
+  #undef ASMJIT_CXX_MSC
+  #undef ASMJIT_CXX_MAKE_VER
+#endif
 
-#endif // _ASMJIT_CORE_API_CONFIG_H
+#endif // ASMJIT_CORE_API_CONFIG_H_INCLUDED
