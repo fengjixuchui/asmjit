@@ -34,6 +34,9 @@
 //   - Copy the code to the destination address.
 // ----------------------------------------------------------------------------
 
+#include <asmjit/core.h>
+#if defined(ASMJIT_BUILD_X86) && ASMJIT_ARCH_X86
+
 #include <asmjit/x86.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,12 +51,14 @@ using namespace asmjit;
 static const uint8_t dataArray[] = { 2, 9, 4, 7, 1, 3, 8, 5, 6, 0 };
 
 static void fail(const char* message, Error err) {
-  printf("%s: %s\n", message, DebugUtils::errorAsString(err));
+  printf("** FAILURE: %s (%s) **\n", message, DebugUtils::errorAsString(err));
   exit(1);
 }
 
 int main() {
-  CodeInfo codeInfo(ArchInfo::kIdHost);
+  printf("AsmJit X86 Sections Test\n\n");
+
+  Environment env = hostEnvironment();
   JitAllocator allocator;
 
 #ifndef ASMJIT_NO_LOGGING
@@ -62,7 +67,7 @@ int main() {
 #endif
 
   CodeHolder code;
-  code.init(codeInfo);
+  code.init(env);
 
 #ifndef ASMJIT_NO_LOGGING
   code.setLogger(&logger);
@@ -83,7 +88,7 @@ int main() {
     Label data = a.newLabel();
 
     FuncDetail func;
-    func.init(FuncSignatureT<size_t, size_t>(CallConv::kIdHost));
+    func.init(FuncSignatureT<size_t, size_t>(CallConv::kIdHost), code.environment());
 
     FuncFrame frame;
     frame.init(func);
@@ -113,7 +118,7 @@ int main() {
   // how to do it explicitly.
   printf("\nCalculating section offsets:\n");
   uint64_t offset = 0;
-  for (Section* section : code.sections()) {
+  for (Section* section : code.sectionsByOrder()) {
     offset = Support::alignUp(offset, section->alignment());
     section->setOffset(offset);
     offset += section->realSize();
@@ -152,25 +157,29 @@ int main() {
   // Copy the flattened code into `mem.rw`. There are two ways. You can either copy
   // everything manually by iterating over all sections or use `copyFlattenedData`.
   // This code is similar to what `copyFlattenedData(p, codeSize, 0)` would do:
-  for (Section* section : code.sections())
+  for (Section* section : code.sectionsByOrder())
     memcpy(static_cast<uint8_t*>(rwPtr) + size_t(section->offset()), section->data(), section->bufferSize());
 
   // Execute the function and test whether it works.
   typedef size_t (*Func)(size_t idx);
   Func fn = (Func)roPtr;
 
-  printf("\nTesting the generated function:\n");
+  printf("\n");
   if (fn(0) != dataArray[0] ||
       fn(3) != dataArray[3] ||
       fn(6) != dataArray[6] ||
       fn(9) != dataArray[9] ) {
-    printf("  [FAILED] The generated function returned incorrect result(s)\n");
+    printf("** FAILURE: The generated function returned incorrect result(s) **\n");
     return 1;
   }
-  else {
-    printf("  [PASSED] The generated function returned expected results\n");
-  }
 
-  allocator.release((void*)fn);
+  printf("** SUCCESS **\n");
   return 0;
 }
+
+#else
+int main() {
+  printf("AsmJit X86 Sections Test is disabled on non-x86 host\n\n");
+  return 0;
+}
+#endif

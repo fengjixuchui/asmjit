@@ -21,13 +21,20 @@
 //    misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
 
+#include <asmjit/core.h>
+#if defined(ASMJIT_BUILD_X86) && ASMJIT_ARCH_X86
+
 #include <asmjit/x86.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "./asmjit_test_misc.h"
+// Required for function tests that pass / return XMM registers.
+#include <emmintrin.h>
+
+#include "asmjit_test_misc.h"
+#include "asmjit_test_compiler.h"
 
 #ifdef _MSC_VER
 // Interaction between '_setjmp' and C++ object destruction is non-portable.
@@ -37,244 +44,26 @@
 using namespace asmjit;
 
 // ============================================================================
-// [CmdLine]
+// [X86TestCase]
 // ============================================================================
 
-class CmdLine {
+class X86TestCase : public TestCase {
 public:
-  CmdLine(int argc, const char* const* argv) noexcept
-    : _argc(argc),
-      _argv(argv) {}
+  X86TestCase(const char* name = nullptr)
+    : TestCase(name) {}
 
-  bool hasArg(const char* arg) noexcept {
-    for (int i = 1; i < _argc; i++)
-      if (strcmp(_argv[i], arg) == 0)
-        return true;
-    return false;
+  virtual void compile(BaseCompiler& cc) override {
+    compile(static_cast<x86::Compiler&>(cc));
   }
 
-  int _argc;
-  const char* const* _argv;
+  virtual void compile(x86::Compiler& cc) = 0;
 };
-
-// ============================================================================
-// [SimpleErrorHandler]
-// ============================================================================
-
-class SimpleErrorHandler : public ErrorHandler {
-public:
-  SimpleErrorHandler() : _err(kErrorOk) {}
-  virtual void handleError(Error err, const char* message, BaseEmitter* origin) {
-    DebugUtils::unused(origin);
-    _err = err;
-    _message.assignString(message);
-  }
-
-  Error _err;
-  String _message;
-};
-
-// ============================================================================
-// [X86Test]
-// ============================================================================
-
-//! Base test interface for testing `x86::Compiler`.
-class X86Test {
-public:
-  X86Test(const char* name = nullptr) { _name.assignString(name); }
-  virtual ~X86Test() {}
-
-  inline const char* name() const { return _name.data(); }
-
-  virtual void compile(x86::Compiler& c) = 0;
-  virtual bool run(void* func, String& result, String& expect) = 0;
-
-  String _name;
-};
-
-// ============================================================================
-// [X86TestApp]
-// ============================================================================
-
-class X86TestApp {
-public:
-  Zone _zone;
-  ZoneAllocator _allocator;
-  ZoneVector<X86Test*> _tests;
-
-  unsigned _nFailed;
-  size_t _outputSize;
-
-  bool _verbose;
-  bool _dumpAsm;
-
-  X86TestApp() noexcept
-    : _zone(8096 - Zone::kBlockOverhead),
-      _allocator(&_zone),
-      _nFailed(0),
-      _outputSize(0),
-      _verbose(false),
-      _dumpAsm(false) {}
-
-  ~X86TestApp() noexcept {
-    for (X86Test* test : _tests)
-      delete test;
-  }
-
-  Error add(X86Test* test) noexcept{
-    return _tests.append(&_allocator, test);
-  }
-
-  template<class T>
-  inline void addT() { T::add(*this); }
-
-  int handleArgs(int argc, const char* const* argv);
-  void showInfo();
-  int run();
-};
-
-int X86TestApp::handleArgs(int argc, const char* const* argv) {
-  CmdLine cmd(argc, argv);
-
-  if (cmd.hasArg("--verbose")) _verbose = true;
-  if (cmd.hasArg("--dump-asm")) _dumpAsm = true;
-
-  return 0;
-}
-
-void X86TestApp::showInfo() {
-  printf("AsmJit Compiler Test-Suite v%u.%u.%u  [Arch=%s]:\n",
-    unsigned((ASMJIT_LIBRARY_VERSION >> 16)       ),
-    unsigned((ASMJIT_LIBRARY_VERSION >>  8) & 0xFF),
-    unsigned((ASMJIT_LIBRARY_VERSION      ) & 0xFF),
-    sizeof(void*) == 8 ? "X64" : "X86");
-  printf("  [%s] Verbose (use --verbose to turn verbose output ON)\n", _verbose ? "x" : " ");
-  printf("  [%s] DumpAsm (use --dump-asm to turn assembler dumps ON)\n", _dumpAsm ? "x" : " ");
-  printf("\n");
-}
-
-int X86TestApp::run() {
-#ifndef ASMJIT_NO_LOGGING
-  uint32_t kFormatFlags = FormatOptions::kFlagMachineCode   |
-                          FormatOptions::kFlagExplainImms   |
-                          FormatOptions::kFlagRegCasts      |
-                          FormatOptions::kFlagAnnotations   |
-                          FormatOptions::kFlagDebugPasses   |
-                          FormatOptions::kFlagDebugRA       ;
-
-  FileLogger fileLogger(stdout);
-  fileLogger.addFlags(kFormatFlags);
-
-  StringLogger stringLogger;
-  stringLogger.addFlags(kFormatFlags);
-#endif
-
-  for (X86Test* test : _tests) {
-    JitRuntime runtime;
-    CodeHolder code;
-    SimpleErrorHandler errorHandler;
-
-    code.init(runtime.codeInfo());
-    code.setErrorHandler(&errorHandler);
-
-#ifndef ASMJIT_NO_LOGGING
-    if (_verbose) {
-      code.setLogger(&fileLogger);
-    }
-    else {
-      stringLogger.clear();
-      code.setLogger(&stringLogger);
-    }
-#endif
-
-    printf("[Test] %s", test->name());
-
-#ifndef ASMJIT_NO_LOGGING
-    if (_verbose) printf("\n");
-#endif
-
-    x86::Compiler cc(&code);
-    test->compile(cc);
-
-    void* func = nullptr;
-    Error err = errorHandler._err;
-
-    if (!err)
-      err = cc.finalize();
-
-#ifndef ASMJIT_NO_LOGGING
-    if (_dumpAsm) {
-      if (!_verbose) printf("\n");
-
-      String sb;
-      cc.dump(sb, kFormatFlags);
-      printf("%s", sb.data());
-    }
-#endif
-
-    if (err == kErrorOk)
-      err = runtime.add(&func, &code);
-
-    if (_verbose)
-      fflush(stdout);
-
-    if (err == kErrorOk) {
-      _outputSize += code.codeSize();
-
-      StringTmp<128> result;
-      StringTmp<128> expect;
-
-      if (test->run(func, result, expect)) {
-        if (!_verbose) printf(" [OK]\n");
-      }
-      else {
-        if (!_verbose) printf(" [FAILED]\n");
-
-#ifndef ASMJIT_NO_LOGGING
-        if (!_verbose) printf("%s", stringLogger.data());
-#endif
-
-        printf("[Status]\n");
-        printf("  Returned: %s\n", result.data());
-        printf("  Expected: %s\n", expect.data());
-
-        _nFailed++;
-      }
-
-      if (_dumpAsm)
-        printf("\n");
-
-      runtime.release(func);
-    }
-    else {
-      if (!_verbose) printf(" [FAILED]\n");
-
-#ifndef ASMJIT_NO_LOGGING
-      if (!_verbose) printf("%s", stringLogger.data());
-#endif
-
-      printf("[Status]\n");
-      printf("  ERROR 0x%08X: %s\n", unsigned(err), errorHandler._message.data());
-
-      _nFailed++;
-    }
-  }
-
-  if (_nFailed == 0)
-    printf("\n[PASSED] All %u tests passed\n", unsigned(_tests.size()));
-  else
-    printf("\n[FAILED] %u %s of %u failed\n", _nFailed, _nFailed == 1 ? "test" : "tests", unsigned(_tests.size()));
-
-  printf("  OutputSize=%zu\n", _outputSize);
-
-  return _nFailed == 0 ? 0 : 1;
-}
 
 // ============================================================================
 // [X86Test_AlignBase]
 // ============================================================================
 
-class X86Test_AlignBase : public X86Test {
+class X86Test_AlignBase : public X86TestCase {
 public:
   X86Test_AlignBase(uint32_t argCount, uint32_t alignment, bool preserveFP)
     : _argCount(argCount),
@@ -283,7 +72,7 @@ public:
     _name.assignFormat("AlignBase {NumArgs=%u Alignment=%u PreserveFP=%c}", argCount, alignment, preserveFP ? 'Y' : 'N');
   }
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     for (uint32_t i = 0; i <= 16; i++) {
       for (uint32_t a = 16; a <= 32; a += 16) {
         app.add(new X86Test_AlignBase(i, a, true));
@@ -444,11 +233,11 @@ public:
 // [X86Test_NoCode]
 // ============================================================================
 
-class X86Test_NoCode : public X86Test {
+class X86Test_NoCode : public X86TestCase {
 public:
-  X86Test_NoCode() : X86Test("NoCode") {}
+  X86Test_NoCode() : X86TestCase("NoCode") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_NoCode());
   }
 
@@ -472,11 +261,11 @@ public:
 // [X86Test_AlignNone]
 // ============================================================================
 
-class X86Test_NoAlign : public X86Test {
+class X86Test_NoAlign : public X86TestCase {
 public:
-  X86Test_NoAlign() : X86Test("NoAlign") {}
+  X86Test_NoAlign() : X86TestCase("NoAlign") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_NoAlign());
   }
 
@@ -502,11 +291,11 @@ public:
 // [X86Test_JumpMerge]
 // ============================================================================
 
-class X86Test_JumpMerge : public X86Test {
+class X86Test_JumpMerge : public X86TestCase {
 public:
-  X86Test_JumpMerge() : X86Test("JumpMerge") {}
+  X86Test_JumpMerge() : X86TestCase("JumpMerge") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_JumpMerge());
   }
 
@@ -568,11 +357,11 @@ public:
 // [X86Test_JumpCross]
 // ============================================================================
 
-class X86Test_JumpCross : public X86Test {
+class X86Test_JumpCross : public X86TestCase {
 public:
-  X86Test_JumpCross() : X86Test("JumpCross") {}
+  X86Test_JumpCross() : X86TestCase("JumpCross") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_JumpCross());
   }
 
@@ -610,11 +399,11 @@ public:
 // [X86Test_JumpMany]
 // ============================================================================
 
-class X86Test_JumpMany : public X86Test {
+class X86Test_JumpMany : public X86TestCase {
 public:
-  X86Test_JumpMany() : X86Test("JumpMany") {}
+  X86Test_JumpMany() : X86TestCase("JumpMany") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_JumpMany());
   }
 
@@ -651,11 +440,11 @@ public:
 // [X86Test_JumpUnreachable1]
 // ============================================================================
 
-class X86Test_JumpUnreachable1 : public X86Test {
+class X86Test_JumpUnreachable1 : public X86TestCase {
 public:
-  X86Test_JumpUnreachable1() : X86Test("JumpUnreachable1") {}
+  X86Test_JumpUnreachable1() : X86TestCase("JumpUnreachable1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_JumpUnreachable1());
   }
 
@@ -703,8 +492,8 @@ public:
 
     func();
 
-    result.appendString("ret={}");
-    expect.appendString("ret={}");
+    result.append("ret={}");
+    expect.append("ret={}");
 
     return true;
   }
@@ -714,11 +503,11 @@ public:
 // [X86Test_JumpUnreachable2]
 // ============================================================================
 
-class X86Test_JumpUnreachable2 : public X86Test {
+class X86Test_JumpUnreachable2 : public X86TestCase {
 public:
-  X86Test_JumpUnreachable2() : X86Test("JumpUnreachable2") {}
+  X86Test_JumpUnreachable2() : X86TestCase("JumpUnreachable2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_JumpUnreachable2());
   }
 
@@ -750,23 +539,23 @@ public:
 
     func();
 
-    result.appendString("ret={}");
-    expect.appendString("ret={}");
+    result.append("ret={}");
+    expect.append("ret={}");
 
     return true;
   }
 };
 
 // ============================================================================
-// [X86Test_JumpTable]
+// [X86Test_JumpTable1]
 // ============================================================================
 
-class X86Test_JumpTable : public X86Test {
+class X86Test_JumpTable1 : public X86TestCase {
 public:
   bool _annotated;
 
-  X86Test_JumpTable(bool annotated)
-    : X86Test("X86Test_JumpTable"),
+  X86Test_JumpTable1(bool annotated)
+    : X86TestCase("X86Test_JumpTable1"),
       _annotated(annotated) {
     _name.assignFormat("JumpTable {%s}", annotated ? "Annotated" : "Unknown Reg/Mem");
   }
@@ -778,9 +567,9 @@ public:
     kOperatorDiv = 3
   };
 
-  static void add(X86TestApp& app) {
-    app.add(new X86Test_JumpTable(false));
-    app.add(new X86Test_JumpTable(true));
+  static void add(TestApp& app) {
+    app.add(new X86Test_JumpTable1(false));
+    app.add(new X86Test_JumpTable1(true));
   }
 
   virtual void compile(x86::Compiler& cc) {
@@ -877,14 +666,97 @@ public:
 };
 
 // ============================================================================
+// [X86Test_JumpTable2]
+// ============================================================================
+
+class X86Test_JumpTable2 : public X86TestCase {
+public:
+  X86Test_JumpTable2()
+    : X86TestCase("JumpTable {Jumping to Begin}") {}
+
+  static void add(TestApp& app) {
+    app.add(new X86Test_JumpTable2());
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<int, int>(CallConv::kIdHost));
+
+    x86::Gp result = cc.newUInt32("result");
+    x86::Gp value = cc.newUInt32("value");
+    x86::Gp target = cc.newIntPtr("target");
+    x86::Gp offset = cc.newIntPtr("offset");
+
+    Label L_Table = cc.newLabel();
+    Label L_Begin = cc.newLabel();
+    Label L_Case0 = cc.newLabel();
+    Label L_Case1 = cc.newLabel();
+    Label L_End = cc.newLabel();
+
+    cc.setArg(0, value);
+
+    cc.bind(L_Begin);
+    cc.lea(offset, x86::ptr(L_Table));
+    if (cc.is64Bit())
+      cc.movsxd(target, x86::dword_ptr(offset, value.cloneAs(offset), 2));
+    else
+      cc.mov(target, x86::dword_ptr(offset, value.cloneAs(offset), 2));
+    cc.add(target, offset);
+
+    {
+      JumpAnnotation* annotation = cc.newJumpAnnotation();
+      annotation->addLabel(L_Case0);
+      annotation->addLabel(L_Case1);
+      annotation->addLabel(L_Begin); // Never used, just for the purpose of the test.
+      cc.jmp(target, annotation);
+
+      cc.bind(L_Case0);
+      cc.mov(result, 0);
+      cc.jmp(L_End);
+
+      cc.bind(L_Case1);
+      cc.mov(result, 1);
+      cc.jmp(L_End);
+    }
+
+    cc.bind(L_End);
+    cc.ret(result);
+
+    cc.endFunc();
+
+    cc.bind(L_Table);
+    cc.embedLabelDelta(L_Case0, L_Table, 4);
+    cc.embedLabelDelta(L_Case1, L_Table, 4);
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef int (*Func)(int);
+    Func func = ptr_as_func<Func>(_func);
+
+    int results[2];
+    int expected[2];
+
+    results[0] = func(0);
+    results[1] = func(1);
+
+    expected[0] = 0;
+    expected[1] = 1;
+
+    result.assignFormat("ret={%d, %d}", results[0], results[1]);
+    expect.assignFormat("ret={%d, %d}", expected[0], expected[1]);
+
+    return result == expect;
+  }
+};
+
+// ============================================================================
 // [X86Test_AllocBase]
 // ============================================================================
 
-class X86Test_AllocBase : public X86Test {
+class X86Test_AllocBase : public X86TestCase {
 public:
-  X86Test_AllocBase() : X86Test("AllocBase") {}
+  X86Test_AllocBase() : X86TestCase("AllocBase") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocBase());
   }
 
@@ -931,13 +803,13 @@ public:
 // [X86Test_AllocMany1]
 // ============================================================================
 
-class X86Test_AllocMany1 : public X86Test {
+class X86Test_AllocMany1 : public X86TestCase {
 public:
-  X86Test_AllocMany1() : X86Test("AllocMany1") {}
+  X86Test_AllocMany1() : X86TestCase("AllocMany1") {}
 
   enum { kCount = 8 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocMany1());
   }
 
@@ -1003,11 +875,11 @@ public:
 // [X86Test_AllocMany2]
 // ============================================================================
 
-class X86Test_AllocMany2 : public X86Test {
+class X86Test_AllocMany2 : public X86TestCase {
 public:
-  X86Test_AllocMany2() : X86Test("AllocMany2") {}
+  X86Test_AllocMany2() : X86TestCase("AllocMany2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocMany2());
   }
 
@@ -1051,8 +923,8 @@ public:
 
     for (i = 0; i < ASMJIT_ARRAY_SIZE(resultBuf); i++) {
       if (i != 0) {
-        result.appendChar(',');
-        expect.appendChar(',');
+        result.append(',');
+        expect.append(',');
       }
 
       result.appendFormat("%u", resultBuf[i]);
@@ -1067,11 +939,11 @@ public:
 // [X86Test_AllocImul1]
 // ============================================================================
 
-class X86Test_AllocImul1 : public X86Test {
+class X86Test_AllocImul1 : public X86TestCase {
 public:
-  X86Test_AllocImul1() : X86Test("AllocImul1") {}
+  X86Test_AllocImul1() : X86TestCase("AllocImul1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocImul1());
   }
 
@@ -1123,11 +995,11 @@ public:
 // [X86Test_AllocImul2]
 // ============================================================================
 
-class X86Test_AllocImul2 : public X86Test {
+class X86Test_AllocImul2 : public X86TestCase {
 public:
-  X86Test_AllocImul2() : X86Test("AllocImul2") {}
+  X86Test_AllocImul2() : X86TestCase("AllocImul2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocImul2());
   }
 
@@ -1177,11 +1049,11 @@ public:
 // [X86Test_AllocIdiv1]
 // ============================================================================
 
-class X86Test_AllocIdiv1 : public X86Test {
+class X86Test_AllocIdiv1 : public X86TestCase {
 public:
-  X86Test_AllocIdiv1() : X86Test("AllocIdiv1") {}
+  X86Test_AllocIdiv1() : X86TestCase("AllocIdiv1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocIdiv1());
   }
 
@@ -1223,11 +1095,11 @@ public:
 // [X86Test_AllocSetz]
 // ============================================================================
 
-class X86Test_AllocSetz : public X86Test {
+class X86Test_AllocSetz : public X86TestCase {
 public:
-  X86Test_AllocSetz() : X86Test("AllocSetz") {}
+  X86Test_AllocSetz() : X86TestCase("AllocSetz") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocSetz());
   }
 
@@ -1274,11 +1146,11 @@ public:
 // [X86Test_AllocShlRor]
 // ============================================================================
 
-class X86Test_AllocShlRor : public X86Test {
+class X86Test_AllocShlRor : public X86TestCase {
 public:
-  X86Test_AllocShlRor() : X86Test("AllocShlRor") {}
+  X86Test_AllocShlRor() : X86TestCase("AllocShlRor") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocShlRor());
   }
 
@@ -1324,13 +1196,13 @@ public:
 // [X86Test_AllocGpbLo]
 // ============================================================================
 
-class X86Test_AllocGpbLo1 : public X86Test {
+class X86Test_AllocGpbLo1 : public X86TestCase {
 public:
-  X86Test_AllocGpbLo1() : X86Test("AllocGpbLo1") {}
+  X86Test_AllocGpbLo1() : X86TestCase("AllocGpbLo1") {}
 
   enum { kCount = 32 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocGpbLo1());
   }
 
@@ -1414,11 +1286,11 @@ public:
 // [X86Test_AllocGpbLo2]
 // ============================================================================
 
-class X86Test_AllocGpbLo2 : public X86Test {
+class X86Test_AllocGpbLo2 : public X86TestCase {
 public:
-  X86Test_AllocGpbLo2() : X86Test("AllocGpbLo2") {}
+  X86Test_AllocGpbLo2() : X86TestCase("AllocGpbLo2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocGpbLo2());
   }
 
@@ -1450,11 +1322,11 @@ public:
 // [X86Test_AllocRepMovsb]
 // ============================================================================
 
-class X86Test_AllocRepMovsb : public X86Test {
+class X86Test_AllocRepMovsb : public X86TestCase {
 public:
-  X86Test_AllocRepMovsb() : X86Test("AllocRepMovsb") {}
+  X86Test_AllocRepMovsb() : X86TestCase("AllocRepMovsb") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocRepMovsb());
   }
 
@@ -1492,11 +1364,11 @@ public:
 // [X86Test_AllocIfElse1]
 // ============================================================================
 
-class X86Test_AllocIfElse1 : public X86Test {
+class X86Test_AllocIfElse1 : public X86TestCase {
 public:
-  X86Test_AllocIfElse1() : X86Test("AllocIfElse1") {}
+  X86Test_AllocIfElse1() : X86TestCase("AllocIfElse1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocIfElse1());
   }
 
@@ -1544,11 +1416,11 @@ public:
 // [X86Test_AllocIfElse2]
 // ============================================================================
 
-class X86Test_AllocIfElse2 : public X86Test {
+class X86Test_AllocIfElse2 : public X86TestCase {
 public:
-  X86Test_AllocIfElse2() : X86Test("AllocIfElse2") {}
+  X86Test_AllocIfElse2() : X86TestCase("AllocIfElse2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocIfElse2());
   }
 
@@ -1605,11 +1477,11 @@ public:
 // [X86Test_AllocIfElse3]
 // ============================================================================
 
-class X86Test_AllocIfElse3 : public X86Test {
+class X86Test_AllocIfElse3 : public X86TestCase {
 public:
-  X86Test_AllocIfElse3() : X86Test("AllocIfElse3") {}
+  X86Test_AllocIfElse3() : X86TestCase("AllocIfElse3") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocIfElse3());
   }
 
@@ -1666,11 +1538,11 @@ public:
 // [X86Test_AllocIfElse4]
 // ============================================================================
 
-class X86Test_AllocIfElse4 : public X86Test {
+class X86Test_AllocIfElse4 : public X86TestCase {
 public:
-  X86Test_AllocIfElse4() : X86Test("AllocIfElse4") {}
+  X86Test_AllocIfElse4() : X86TestCase("AllocIfElse4") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocIfElse4());
   }
 
@@ -1732,11 +1604,11 @@ public:
 // [X86Test_AllocInt8]
 // ============================================================================
 
-class X86Test_AllocInt8 : public X86Test {
+class X86Test_AllocInt8 : public X86TestCase {
 public:
-  X86Test_AllocInt8() : X86Test("AllocInt8") {}
+  X86Test_AllocInt8() : X86TestCase("AllocInt8") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocInt8());
   }
 
@@ -1771,11 +1643,11 @@ public:
 // [X86Test_AllocUnhandledArg]
 // ============================================================================
 
-class X86Test_AllocUnhandledArg : public X86Test {
+class X86Test_AllocUnhandledArg : public X86TestCase {
 public:
-  X86Test_AllocUnhandledArg() : X86Test("AllocUnhandledArg") {}
+  X86Test_AllocUnhandledArg() : X86TestCase("AllocUnhandledArg") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocUnhandledArg());
   }
 
@@ -1807,11 +1679,11 @@ public:
 // [X86Test_AllocArgsIntPtr]
 // ============================================================================
 
-class X86Test_AllocArgsIntPtr : public X86Test {
+class X86Test_AllocArgsIntPtr : public X86TestCase {
 public:
-  X86Test_AllocArgsIntPtr() : X86Test("AllocArgsIntPtr") {}
+  X86Test_AllocArgsIntPtr() : X86TestCase("AllocArgsIntPtr") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocArgsIntPtr());
   }
 
@@ -1866,11 +1738,11 @@ public:
 // [X86Test_AllocArgsFloat]
 // ============================================================================
 
-class X86Test_AllocArgsFloat : public X86Test {
+class X86Test_AllocArgsFloat : public X86TestCase {
 public:
-  X86Test_AllocArgsFloat() : X86Test("AllocArgsFloat") {}
+  X86Test_AllocArgsFloat() : X86TestCase("AllocArgsFloat") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocArgsFloat());
   }
 
@@ -1920,11 +1792,11 @@ public:
 // [X86Test_AllocArgsDouble]
 // ============================================================================
 
-class X86Test_AllocArgsDouble : public X86Test {
+class X86Test_AllocArgsDouble : public X86TestCase {
 public:
-  X86Test_AllocArgsDouble() : X86Test("AllocArgsDouble") {}
+  X86Test_AllocArgsDouble() : X86TestCase("AllocArgsDouble") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocArgsDouble());
   }
 
@@ -1971,14 +1843,67 @@ public:
 };
 
 // ============================================================================
+// [X86Test_AllocArgsVec]
+// ============================================================================
+
+class X86Test_AllocArgsVec : public X86TestCase {
+public:
+  X86Test_AllocArgsVec() : X86TestCase("AllocArgsVec") {}
+
+  static void add(TestApp& app) {
+    // Not supported on Windows.
+#ifndef _WIN32
+    app.add(new X86Test_AllocArgsVec());
+#endif
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<x86::Xmm, x86::Xmm, x86::Xmm>(CallConv::kIdHost));
+
+    x86::Xmm a = cc.newXmm("aXmm");
+    x86::Xmm b = cc.newXmm("bXmm");
+
+    cc.setArg(0, a);
+    cc.setArg(1, b);
+
+    cc.paddb(a, b);
+    cc.ret(a);
+
+    cc.endFunc();
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef __m128i (*Func)(__m128i, __m128i);
+    Func func = ptr_as_func<Func>(_func);
+
+    uint8_t aData[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+    uint8_t bData[16] = { 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+
+    uint8_t rData[16];
+    uint8_t eData[16] = { 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15 };
+
+    __m128i aVec = _mm_loadu_si128(reinterpret_cast<const __m128i*>(aData));
+    __m128i bVec = _mm_loadu_si128(reinterpret_cast<const __m128i*>(bData));
+
+    __m128i rVec = func(aVec, bVec);
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(rData), rVec);
+
+    result.appendHex(rData, 16);
+    expect.appendHex(eData, 16);
+
+    return result == expect;
+  }
+};
+
+// ============================================================================
 // [X86Test_AllocRetFloat1]
 // ============================================================================
 
-class X86Test_AllocRetFloat1 : public X86Test {
+class X86Test_AllocRetFloat1 : public X86TestCase {
 public:
-  X86Test_AllocRetFloat1() : X86Test("AllocRetFloat1") {}
+  X86Test_AllocRetFloat1() : X86TestCase("AllocRetFloat1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocRetFloat1());
   }
 
@@ -2010,11 +1935,11 @@ public:
 // [X86Test_AllocRetFloat2]
 // ============================================================================
 
-class X86Test_AllocRetFloat2 : public X86Test {
+class X86Test_AllocRetFloat2 : public X86TestCase {
 public:
-  X86Test_AllocRetFloat2() : X86Test("AllocRetFloat2") {}
+  X86Test_AllocRetFloat2() : X86TestCase("AllocRetFloat2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocRetFloat2());
   }
 
@@ -2051,11 +1976,11 @@ public:
 // [X86Test_AllocRetDouble1]
 // ============================================================================
 
-class X86Test_AllocRetDouble1 : public X86Test {
+class X86Test_AllocRetDouble1 : public X86TestCase {
 public:
-  X86Test_AllocRetDouble1() : X86Test("AllocRetDouble1") {}
+  X86Test_AllocRetDouble1() : X86TestCase("AllocRetDouble1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocRetDouble1());
   }
 
@@ -2086,11 +2011,11 @@ public:
 // [X86Test_AllocRetDouble2]
 // ============================================================================
 
-class X86Test_AllocRetDouble2 : public X86Test {
+class X86Test_AllocRetDouble2 : public X86TestCase {
 public:
-  X86Test_AllocRetDouble2() : X86Test("AllocRetDouble2") {}
+  X86Test_AllocRetDouble2() : X86TestCase("AllocRetDouble2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocRetDouble2());
   }
 
@@ -2127,13 +2052,13 @@ public:
 // [X86Test_AllocStack]
 // ============================================================================
 
-class X86Test_AllocStack : public X86Test {
+class X86Test_AllocStack : public X86TestCase {
 public:
-  X86Test_AllocStack() : X86Test("AllocStack") {}
+  X86Test_AllocStack() : X86TestCase("AllocStack") {}
 
   enum { kSize = 256 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocStack());
   }
 
@@ -2195,13 +2120,13 @@ public:
 // [X86Test_AllocMemcpy]
 // ============================================================================
 
-class X86Test_AllocMemcpy : public X86Test {
+class X86Test_AllocMemcpy : public X86TestCase {
 public:
-  X86Test_AllocMemcpy() : X86Test("AllocMemcpy") {}
+  X86Test_AllocMemcpy() : X86TestCase("AllocMemcpy") {}
 
   enum { kCount = 32 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocMemcpy());
   }
 
@@ -2253,21 +2178,21 @@ public:
 
     func(dstBuffer, srcBuffer, kCount);
 
-    result.assignString("buf={");
-    expect.assignString("buf={");
+    result.assign("buf={");
+    expect.assign("buf={");
 
     for (i = 0; i < kCount; i++) {
       if (i != 0) {
-        result.appendString(", ");
-        expect.appendString(", ");
+        result.append(", ");
+        expect.append(", ");
       }
 
       result.appendFormat("%u", unsigned(dstBuffer[i]));
       expect.appendFormat("%u", unsigned(srcBuffer[i]));
     }
 
-    result.appendString("}");
-    expect.appendString("}");
+    result.append("}");
+    expect.append("}");
 
     return result == expect;
   }
@@ -2277,11 +2202,11 @@ public:
 // [X86Test_AllocExtraBlock]
 // ============================================================================
 
-class X86Test_AllocExtraBlock : public X86Test {
+class X86Test_AllocExtraBlock : public X86TestCase {
 public:
-  X86Test_AllocExtraBlock() : X86Test("AllocExtraBlock") {}
+  X86Test_AllocExtraBlock() : X86TestCase("AllocExtraBlock") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocExtraBlock());
   }
 
@@ -2340,13 +2265,13 @@ public:
 // [X86Test_AllocAlphaBlend]
 // ============================================================================
 
-class X86Test_AllocAlphaBlend : public X86Test {
+class X86Test_AllocAlphaBlend : public X86TestCase {
 public:
-  X86Test_AllocAlphaBlend() : X86Test("AllocAlphaBlend") {}
+  X86Test_AllocAlphaBlend() : X86TestCase("AllocAlphaBlend") {}
 
   enum { kCount = 17 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_AllocAlphaBlend());
   }
 
@@ -2395,21 +2320,21 @@ public:
 
     func(dstBuffer, srcBuffer, kCount);
 
-    result.assignString("buf={");
-    expect.assignString("buf={");
+    result.assign("buf={");
+    expect.assign("buf={");
 
     for (i = 0; i < kCount; i++) {
       if (i != 0) {
-        result.appendString(", ");
-        expect.appendString(", ");
+        result.append(", ");
+        expect.append(", ");
       }
 
       result.appendFormat("%08X", unsigned(dstBuffer[i]));
       expect.appendFormat("%08X", unsigned(expBuffer[i]));
     }
 
-    result.appendString("}");
-    expect.appendString("}");
+    result.append("}");
+    expect.append("}");
 
     return result == expect;
   }
@@ -2419,11 +2344,11 @@ public:
 // [X86Test_FuncCallBase1]
 // ============================================================================
 
-class X86Test_FuncCallBase1 : public X86Test {
+class X86Test_FuncCallBase1 : public X86TestCase {
 public:
-  X86Test_FuncCallBase1() : X86Test("FuncCallBase1") {}
+  X86Test_FuncCallBase1() : X86TestCase("FuncCallBase1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallBase1());
   }
 
@@ -2443,11 +2368,12 @@ public:
     cc.shl(v2, 1);
 
     // Call a function.
-    FuncCallNode* call = cc.call(imm((void*)calledFunc), FuncSignatureT<int, int, int, int>(CallConv::kIdHost));
-    call->setArg(0, v2);
-    call->setArg(1, v1);
-    call->setArg(2, v0);
-    call->setRet(0, v0);
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<int, int, int, int>(CallConv::kIdHost));
+    invokeNode->setArg(0, v2);
+    invokeNode->setArg(1, v1);
+    invokeNode->setArg(2, v0);
+    invokeNode->setRet(0, v0);
 
     cc.ret(v0);
     cc.endFunc();
@@ -2473,13 +2399,13 @@ public:
 // [X86Test_FuncCallBase2]
 // ============================================================================
 
-class X86Test_FuncCallBase2 : public X86Test {
+class X86Test_FuncCallBase2 : public X86TestCase {
 public:
-  X86Test_FuncCallBase2() : X86Test("FuncCallBase2") {}
+  X86Test_FuncCallBase2() : X86TestCase("FuncCallBase2") {}
 
   enum { kSize = 256 };
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallBase2());
   }
 
@@ -2498,29 +2424,29 @@ public:
     Label L_Exit = cc.newLabel();
 
     static const char token[kTokenSize] = "-+:|abcdefghijklmnopqrstuvwxyz|";
-    FuncCallNode* call;
+    InvokeNode* invokeNode;
 
     cc.lea(p1, s1);
     cc.lea(p2, s2);
 
     // Try to corrupt the stack if wrongly allocated.
-    call = cc.call(imm((void*)memcpy), FuncSignatureT<void*, void*, void*, size_t>(CallConv::kIdHostCDecl));
-    call->setArg(0, p1);
-    call->setArg(1, imm(token));
-    call->setArg(2, imm(kTokenSize));
-    call->setRet(0, p1);
+    cc.invoke(&invokeNode, imm((void*)memcpy), FuncSignatureT<void*, void*, void*, size_t>(CallConv::kIdCDecl));
+    invokeNode->setArg(0, p1);
+    invokeNode->setArg(1, imm(token));
+    invokeNode->setArg(2, imm(kTokenSize));
+    invokeNode->setRet(0, p1);
 
-    call = cc.call(imm((void*)memcpy), FuncSignatureT<void*, void*, void*, size_t>(CallConv::kIdHostCDecl));
-    call->setArg(0, p2);
-    call->setArg(1, imm(token));
-    call->setArg(2, imm(kTokenSize));
-    call->setRet(0, p2);
+    cc.invoke(&invokeNode, imm((void*)memcpy), FuncSignatureT<void*, void*, void*, size_t>(CallConv::kIdCDecl));
+    invokeNode->setArg(0, p2);
+    invokeNode->setArg(1, imm(token));
+    invokeNode->setArg(2, imm(kTokenSize));
+    invokeNode->setRet(0, p2);
 
-    call = cc.call(imm((void*)memcmp), FuncSignatureT<int, void*, void*, size_t>(CallConv::kIdHostCDecl));
-    call->setArg(0, p1);
-    call->setArg(1, p2);
-    call->setArg(2, imm(kTokenSize));
-    call->setRet(0, ret);
+    cc.invoke(&invokeNode, imm((void*)memcmp), FuncSignatureT<int, void*, void*, size_t>(CallConv::kIdCDecl));
+    invokeNode->setArg(0, p1);
+    invokeNode->setArg(1, p2);
+    invokeNode->setArg(2, imm(kTokenSize));
+    invokeNode->setRet(0, ret);
 
     // This should be 0 on success, however, if both `p1` and `p2` were
     // allocated in the same address this check will still pass.
@@ -2555,11 +2481,11 @@ public:
 // [X86Test_FuncCallStd]
 // ============================================================================
 
-class X86Test_FuncCallStd : public X86Test {
+class X86Test_FuncCallStd : public X86TestCase {
 public:
-  X86Test_FuncCallStd() : X86Test("FuncCallStd") {}
+  X86Test_FuncCallStd() : X86TestCase("FuncCallStd") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallStd());
   }
 
@@ -2573,13 +2499,14 @@ public:
     cc.setArg(1, y);
     cc.setArg(2, z);
 
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
-      FuncSignatureT<int, int, int, int>(CallConv::kIdHostStdCall));
-    call->setArg(0, x);
-    call->setArg(1, y);
-    call->setArg(2, z);
-    call->setRet(0, x);
+      FuncSignatureT<int, int, int, int>(CallConv::kIdStdCall));
+    invokeNode->setArg(0, x);
+    invokeNode->setArg(1, y);
+    invokeNode->setArg(2, z);
+    invokeNode->setRet(0, x);
 
     cc.ret(x);
     cc.endFunc();
@@ -2608,11 +2535,11 @@ public:
 // [X86Test_FuncCallFast]
 // ============================================================================
 
-class X86Test_FuncCallFast : public X86Test {
+class X86Test_FuncCallFast : public X86TestCase {
 public:
-  X86Test_FuncCallFast() : X86Test("FuncCallFast") {}
+  X86Test_FuncCallFast() : X86TestCase("FuncCallFast") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallFast());
   }
 
@@ -2622,18 +2549,15 @@ public:
     cc.addFunc(FuncSignatureT<int, int>(CallConv::kIdHost));
     cc.setArg(0, var);
 
-    FuncCallNode* call;
-    call = cc.call(
-      imm((void*)calledFunc),
-      FuncSignatureT<int, int>(CallConv::kIdHostFastCall));
-    call->setArg(0, var);
-    call->setRet(0, var);
+    InvokeNode* invokeNode;
 
-    call = cc.call(
-      imm((void*)calledFunc),
-      FuncSignatureT<int, int>(CallConv::kIdHostFastCall));
-    call->setArg(0, var);
-    call->setRet(0, var);
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<int, int>(CallConv::kIdFastCall));
+    invokeNode->setArg(0, var);
+    invokeNode->setRet(0, var);
+
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<int, int>(CallConv::kIdFastCall));
+    invokeNode->setArg(0, var);
+    invokeNode->setRet(0, var);
 
     cc.ret(var);
     cc.endFunc();
@@ -2659,20 +2583,111 @@ public:
 };
 
 // ============================================================================
+// [X86Test_FuncCallSIMD]
+// ============================================================================
+
+class X86Test_FuncCallSIMD : public X86TestCase {
+public:
+  bool _useVectorCall;
+
+  X86Test_FuncCallSIMD(bool useVectorCall)
+    : X86TestCase(),
+      _useVectorCall(useVectorCall) {
+    _name.assignFormat("FuncCallSIMD {%s}", _useVectorCall ? "__vectorcall" : "__cdecl");
+  }
+
+  static void add(TestApp& app) {
+    app.add(new X86Test_FuncCallSIMD(false));
+#ifdef _MSC_VER
+    app.add(new X86Test_FuncCallSIMD(true));
+#endif
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<void, void*, const void*, const void*>(CallConv::kIdHost));
+
+    x86::Gp resultPtr = cc.newIntPtr("resultPtr");
+    x86::Gp aPtr = cc.newIntPtr("aPtr");
+    x86::Gp bPtr = cc.newIntPtr("bPtr");
+    x86::Gp pFn = cc.newIntPtr("pFn");
+
+    x86::Xmm aXmm = cc.newXmm("aXmm");
+    x86::Xmm bXmm = cc.newXmm("bXmm");
+
+    cc.setArg(0, resultPtr);
+    cc.setArg(1, aPtr);
+    cc.setArg(2, bPtr);
+
+    uint32_t ccId = CallConv::kIdCDecl;
+    Imm pFnImm = imm((void*)calledFunc_cdecl);
+
+#ifdef _MSC_VER
+    if (_useVectorCall) {
+      ccId = CallConv::kIdVectorCall;
+      pFnImm = imm((void*)calledFunc_vcall);
+    }
+#endif
+
+    cc.mov(pFn, pFnImm);
+    cc.movdqu(aXmm, x86::ptr(aPtr));
+    cc.movdqu(bXmm, x86::ptr(bPtr));
+
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, pFn, FuncSignatureT<x86::Xmm, x86::Xmm, x86::Xmm>(ccId));
+
+    invokeNode->setArg(0, aXmm);
+    invokeNode->setArg(1, bXmm);
+    invokeNode->setRet(0, aXmm);
+
+    cc.movdqu(x86::ptr(resultPtr), aXmm);
+
+    cc.endFunc();
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef void (*Func)(void*, const void*, const void*);
+    Func func = ptr_as_func<Func>(_func);
+
+    uint8_t aData[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+    uint8_t bData[16] = { 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+
+    uint8_t rData[16];
+    uint8_t eData[16] = { 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15 };
+
+    func(rData, aData, bData);
+
+    result.appendHex(rData, 16);
+    expect.appendHex(eData, 16);
+
+    return result == expect;
+  }
+
+  static __m128i calledFunc_cdecl(__m128i a, __m128i b) {
+    return _mm_add_epi8(a, b);
+  }
+
+#ifdef _MSC_VER
+  static __m128i __vectorcall calledFunc_vcall(__m128i a, __m128i b) {
+    return _mm_add_epi8(a, b);
+  }
+#endif
+};
+
+// ============================================================================
 // [X86Test_FuncCallLight]
 // ============================================================================
 
-class X86Test_FuncCallLight : public X86Test {
+class X86Test_FuncCallLight : public X86TestCase {
 public:
-  X86Test_FuncCallLight() : X86Test("FuncCallLight") {}
+  X86Test_FuncCallLight() : X86TestCase("FuncCallLight") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallLight());
   }
 
   virtual void compile(x86::Compiler& cc) {
-    FuncSignatureT<void, const void*, const void*, const void*, const void*, void*> funcSig(CallConv::kIdHostCDecl);
-    FuncSignatureT<x86::Xmm, x86::Xmm, x86::Xmm> fastSig(CallConv::kIdHostLightCall2);
+    FuncSignatureT<void, const void*, const void*, const void*, const void*, void*> funcSig(CallConv::kIdCDecl);
+    FuncSignatureT<x86::Xmm, x86::Xmm, x86::Xmm> fastSig(CallConv::kIdLightCall2);
 
     FuncNode* func = cc.newFunc(funcSig);
     FuncNode* fast = cc.newFunc(fastSig);
@@ -2705,15 +2720,17 @@ public:
       x86::Xmm xXmm = cc.newXmm("xXmm");
       x86::Xmm yXmm = cc.newXmm("yXmm");
 
-      FuncCallNode* call1 = cc.call(fast->label(), fastSig);
-      call1->setArg(0, aXmm);
-      call1->setArg(1, bXmm);
-      call1->setRet(0, xXmm);
+      InvokeNode* invokeNode;
 
-      FuncCallNode* call2 = cc.call(fast->label(), fastSig);
-      call2->setArg(0, cXmm);
-      call2->setArg(1, dXmm);
-      call2->setRet(0, yXmm);
+      cc.invoke(&invokeNode, fast->label(), fastSig);
+      invokeNode->setArg(0, aXmm);
+      invokeNode->setArg(1, bXmm);
+      invokeNode->setRet(0, xXmm);
+
+      cc.invoke(&invokeNode, fast->label(), fastSig);
+      invokeNode->setArg(0, cXmm);
+      invokeNode->setArg(1, dXmm);
+      invokeNode->setRet(0, yXmm);
 
       cc.pmullw(xXmm, yXmm);
       cc.movups(x86::ptr(pOut), xXmm);
@@ -2760,11 +2777,11 @@ public:
 // [X86Test_FuncCallManyArgs]
 // ============================================================================
 
-class X86Test_FuncCallManyArgs : public X86Test {
+class X86Test_FuncCallManyArgs : public X86TestCase {
 public:
-  X86Test_FuncCallManyArgs() : X86Test("FuncCallManyArgs") {}
+  X86Test_FuncCallManyArgs() : X86TestCase("FuncCallManyArgs") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallManyArgs());
   }
 
@@ -2798,21 +2815,22 @@ public:
     cc.mov(vi, 0x18);
     cc.mov(vj, 0x1E);
 
-    // Call function.
-    FuncCallNode* call = cc.call(
+    // Function call.
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<int, int, int, int, int, int, int, int, int, int, int>(CallConv::kIdHost));
-    call->setArg(0, va);
-    call->setArg(1, vb);
-    call->setArg(2, vc);
-    call->setArg(3, vd);
-    call->setArg(4, ve);
-    call->setArg(5, vf);
-    call->setArg(6, vg);
-    call->setArg(7, vh);
-    call->setArg(8, vi);
-    call->setArg(9, vj);
-    call->setRet(0, va);
+    invokeNode->setArg(0, va);
+    invokeNode->setArg(1, vb);
+    invokeNode->setArg(2, vc);
+    invokeNode->setArg(3, vd);
+    invokeNode->setArg(4, ve);
+    invokeNode->setArg(5, vf);
+    invokeNode->setArg(6, vg);
+    invokeNode->setArg(7, vh);
+    invokeNode->setArg(8, vi);
+    invokeNode->setArg(9, vj);
+    invokeNode->setRet(0, va);
 
     cc.ret(va);
     cc.endFunc();
@@ -2836,11 +2854,11 @@ public:
 // [X86Test_FuncCallDuplicateArgs]
 // ============================================================================
 
-class X86Test_FuncCallDuplicateArgs : public X86Test {
+class X86Test_FuncCallDuplicateArgs : public X86TestCase {
 public:
-  X86Test_FuncCallDuplicateArgs() : X86Test("FuncCallDuplicateArgs") {}
+  X86Test_FuncCallDuplicateArgs() : X86TestCase("FuncCallDuplicateArgs") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallDuplicateArgs());
   }
 
@@ -2856,20 +2874,21 @@ public:
     cc.mov(a, 3);
 
     // Call function.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<int, int, int, int, int, int, int, int, int, int, int>(CallConv::kIdHost));
-    call->setArg(0, a);
-    call->setArg(1, a);
-    call->setArg(2, a);
-    call->setArg(3, a);
-    call->setArg(4, a);
-    call->setArg(5, a);
-    call->setArg(6, a);
-    call->setArg(7, a);
-    call->setArg(8, a);
-    call->setArg(9, a);
-    call->setRet(0, a);
+    invokeNode->setArg(0, a);
+    invokeNode->setArg(1, a);
+    invokeNode->setArg(2, a);
+    invokeNode->setArg(3, a);
+    invokeNode->setArg(4, a);
+    invokeNode->setArg(5, a);
+    invokeNode->setArg(6, a);
+    invokeNode->setArg(7, a);
+    invokeNode->setArg(8, a);
+    invokeNode->setArg(9, a);
+    invokeNode->setRet(0, a);
 
     cc.ret(a);
     cc.endFunc();
@@ -2893,11 +2912,11 @@ public:
 // [X86Test_FuncCallImmArgs]
 // ============================================================================
 
-class X86Test_FuncCallImmArgs : public X86Test {
+class X86Test_FuncCallImmArgs : public X86TestCase {
 public:
-  X86Test_FuncCallImmArgs() : X86Test("FuncCallImmArgs") {}
+  X86Test_FuncCallImmArgs() : X86TestCase("FuncCallImmArgs") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallImmArgs());
   }
 
@@ -2908,21 +2927,22 @@ public:
     x86::Gp rv = cc.newInt32("rv");
 
     // Call function.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)X86Test_FuncCallManyArgs::calledFunc),
       FuncSignatureT<int, int, int, int, int, int, int, int, int, int, int>(CallConv::kIdHost));
 
-    call->setArg(0, imm(0x03));
-    call->setArg(1, imm(0x12));
-    call->setArg(2, imm(0xA0));
-    call->setArg(3, imm(0x0B));
-    call->setArg(4, imm(0x2F));
-    call->setArg(5, imm(0x02));
-    call->setArg(6, imm(0x0C));
-    call->setArg(7, imm(0x12));
-    call->setArg(8, imm(0x18));
-    call->setArg(9, imm(0x1E));
-    call->setRet(0, rv);
+    invokeNode->setArg(0, imm(0x03));
+    invokeNode->setArg(1, imm(0x12));
+    invokeNode->setArg(2, imm(0xA0));
+    invokeNode->setArg(3, imm(0x0B));
+    invokeNode->setArg(4, imm(0x2F));
+    invokeNode->setArg(5, imm(0x02));
+    invokeNode->setArg(6, imm(0x0C));
+    invokeNode->setArg(7, imm(0x12));
+    invokeNode->setArg(8, imm(0x18));
+    invokeNode->setArg(9, imm(0x1E));
+    invokeNode->setRet(0, rv);
 
     cc.ret(rv);
     cc.endFunc();
@@ -2946,11 +2966,11 @@ public:
 // [X86Test_FuncCallPtrArgs]
 // ============================================================================
 
-class X86Test_FuncCallPtrArgs : public X86Test {
+class X86Test_FuncCallPtrArgs : public X86TestCase {
 public:
-  X86Test_FuncCallPtrArgs() : X86Test("FuncCallPtrArgs") {}
+  X86Test_FuncCallPtrArgs() : X86TestCase("FuncCallPtrArgs") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallPtrArgs());
   }
 
@@ -2974,21 +2994,22 @@ public:
     x86::Gp rv = cc.newInt32("rv");
 
     // Call function.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<int, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*>(CallConv::kIdHost));
 
-    call->setArg(0, imm(0x01));
-    call->setArg(1, imm(0x02));
-    call->setArg(2, imm(0x03));
-    call->setArg(3, imm(0x04));
-    call->setArg(4, imm(0x05));
-    call->setArg(5, imm(0x06));
-    call->setArg(6, imm(0x07));
-    call->setArg(7, imm(0x08));
-    call->setArg(8, imm(0x09));
-    call->setArg(9, imm(0x0A));
-    call->setRet(0, rv);
+    invokeNode->setArg(0, imm(0x01));
+    invokeNode->setArg(1, imm(0x02));
+    invokeNode->setArg(2, imm(0x03));
+    invokeNode->setArg(3, imm(0x04));
+    invokeNode->setArg(4, imm(0x05));
+    invokeNode->setArg(5, imm(0x06));
+    invokeNode->setArg(6, imm(0x07));
+    invokeNode->setArg(7, imm(0x08));
+    invokeNode->setArg(8, imm(0x09));
+    invokeNode->setArg(9, imm(0x0A));
+    invokeNode->setRet(0, rv);
 
     cc.ret(rv);
     cc.endFunc();
@@ -3012,11 +3033,11 @@ public:
 // [X86Test_FuncCallRefArgs]
 // ============================================================================
 
-class X86Test_FuncCallRefArgs : public X86Test {
+class X86Test_FuncCallRefArgs : public X86TestCase {
 public:
-  X86Test_FuncCallRefArgs() : X86Test("FuncCallRefArgs") {}
+  X86Test_FuncCallRefArgs() : X86TestCase("FuncCallRefArgs") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallRefArgs());
   }
 
@@ -3044,15 +3065,16 @@ public:
     cc.setArg(3, arg4);
 
     // Call function.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<int, int&, int&, int&, int&>(CallConv::kIdHost));
 
-    call->setArg(0, arg1);
-    call->setArg(1, arg2);
-    call->setArg(2, arg3);
-    call->setArg(3, arg4);
-    call->setRet(0, rv);
+    invokeNode->setArg(0, arg1);
+    invokeNode->setArg(1, arg2);
+    invokeNode->setArg(2, arg3);
+    invokeNode->setArg(3, arg4);
+    invokeNode->setRet(0, rv);
 
     cc.ret(rv);
     cc.endFunc();
@@ -3078,11 +3100,11 @@ public:
 // [X86Test_FuncCallFloatAsXmmRet]
 // ============================================================================
 
-class X86Test_FuncCallFloatAsXmmRet : public X86Test {
+class X86Test_FuncCallFloatAsXmmRet : public X86TestCase {
 public:
-  X86Test_FuncCallFloatAsXmmRet() : X86Test("FuncCallFloatAsXmmRet") {}
+  X86Test_FuncCallFloatAsXmmRet() : X86TestCase("FuncCallFloatAsXmmRet") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallFloatAsXmmRet());
   }
 
@@ -3101,12 +3123,11 @@ public:
     cc.setArg(1, b);
 
     // Call function.
-    FuncCallNode* call = cc.call(
-      imm((void*)calledFunc),
-      FuncSignatureT<float, float, float>(CallConv::kIdHost));
-    call->setArg(0, a);
-    call->setArg(1, b);
-    call->setRet(0, ret);
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<float, float, float>(CallConv::kIdHost));
+    invokeNode->setArg(0, a);
+    invokeNode->setArg(1, b);
+    invokeNode->setRet(0, ret);
 
     cc.ret(ret);
     cc.endFunc();
@@ -3130,11 +3151,11 @@ public:
 // [X86Test_FuncCallDoubleAsXmmRet]
 // ============================================================================
 
-class X86Test_FuncCallDoubleAsXmmRet : public X86Test {
+class X86Test_FuncCallDoubleAsXmmRet : public X86TestCase {
 public:
-  X86Test_FuncCallDoubleAsXmmRet() : X86Test("FuncCallDoubleAsXmmRet") {}
+  X86Test_FuncCallDoubleAsXmmRet() : X86TestCase("FuncCallDoubleAsXmmRet") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallDoubleAsXmmRet());
   }
 
@@ -3152,12 +3173,11 @@ public:
     cc.setArg(0, a);
     cc.setArg(1, b);
 
-    FuncCallNode* call = cc.call(
-      imm((void*)calledFunc),
-      FuncSignatureT<double, double, double>(CallConv::kIdHost));
-    call->setArg(0, a);
-    call->setArg(1, b);
-    call->setRet(0, ret);
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<double, double, double>(CallConv::kIdHost));
+    invokeNode->setArg(0, a);
+    invokeNode->setArg(1, b);
+    invokeNode->setRet(0, ret);
 
     cc.ret(ret);
     cc.endFunc();
@@ -3181,11 +3201,11 @@ public:
 // [X86Test_FuncCallConditional]
 // ============================================================================
 
-class X86Test_FuncCallConditional : public X86Test {
+class X86Test_FuncCallConditional : public X86TestCase {
 public:
-  X86Test_FuncCallConditional() : X86Test("FuncCallConditional") {}
+  X86Test_FuncCallConditional() : X86TestCase("FuncCallConditional") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallConditional());
   }
 
@@ -3194,7 +3214,7 @@ public:
     x86::Gp y = cc.newInt32("y");
     x86::Gp op = cc.newInt32("op");
 
-    FuncCallNode* call;
+    InvokeNode* invokeNode;
     x86::Gp result;
 
     cc.addFunc(FuncSignatureT<int, int, int, int>(CallConv::kIdHost));
@@ -3217,19 +3237,19 @@ public:
     cc.bind(opAdd);
     result = cc.newInt32("result_1");
 
-    call = cc.call((uint64_t)calledFuncAdd, FuncSignatureT<int, int, int>(CallConv::kIdHost));
-    call->setArg(0, x);
-    call->setArg(1, y);
-    call->setRet(0, result);
+    cc.invoke(&invokeNode, (uint64_t)calledFuncAdd, FuncSignatureT<int, int, int>(CallConv::kIdHost));
+    invokeNode->setArg(0, x);
+    invokeNode->setArg(1, y);
+    invokeNode->setRet(0, result);
     cc.ret(result);
 
     cc.bind(opMul);
     result = cc.newInt32("result_2");
 
-    call = cc.call((uint64_t)calledFuncMul, FuncSignatureT<int, int, int>(CallConv::kIdHost));
-    call->setArg(0, x);
-    call->setArg(1, y);
-    call->setRet(0, result);
+    cc.invoke(&invokeNode, (uint64_t)calledFuncMul, FuncSignatureT<int, int, int>(CallConv::kIdHost));
+    invokeNode->setArg(0, x);
+    invokeNode->setArg(1, y);
+    invokeNode->setRet(0, result);
 
     cc.ret(result);
     cc.endFunc();
@@ -3262,11 +3282,11 @@ public:
 // [X86Test_FuncCallMultiple]
 // ============================================================================
 
-class X86Test_FuncCallMultiple : public X86Test {
+class X86Test_FuncCallMultiple : public X86TestCase {
 public:
-  X86Test_FuncCallMultiple() : X86Test("FuncCallMultiple") {}
+  X86Test_FuncCallMultiple() : X86TestCase("FuncCallMultiple") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMultiple());
   }
 
@@ -3291,25 +3311,25 @@ public:
       x86::Gp ret = cc.newInt32("ret");
       x86::Gp ptr = cc.newIntPtr("ptr");
       x86::Gp idx = cc.newInt32("idx");
-      FuncCallNode* call;
+      InvokeNode* invokeNode;
 
       cc.mov(ptr, buf);
       cc.mov(idx, int(i));
 
-      call = cc.call((uint64_t)calledFunc, FuncSignatureT<int, int*, int>(CallConv::kIdHostFastCall));
-      call->setArg(0, ptr);
-      call->setArg(1, idx);
-      call->setRet(0, ret);
+      cc.invoke(&invokeNode, (uint64_t)calledFunc, FuncSignatureT<int, int*, int>(CallConv::kIdFastCall));
+      invokeNode->setArg(0, ptr);
+      invokeNode->setArg(1, idx);
+      invokeNode->setRet(0, ret);
 
       cc.add(acc0, ret);
 
       cc.mov(ptr, buf);
       cc.mov(idx, int(i));
 
-      call = cc.call((uint64_t)calledFunc, FuncSignatureT<int, int*, int>(CallConv::kIdHostFastCall));
-      call->setArg(0, ptr);
-      call->setArg(1, idx);
-      call->setRet(0, ret);
+      cc.invoke(&invokeNode, (uint64_t)calledFunc, FuncSignatureT<int, int*, int>(CallConv::kIdFastCall));
+      invokeNode->setArg(0, ptr);
+      invokeNode->setArg(1, idx);
+      invokeNode->setRet(0, ret);
 
       cc.sub(acc1, ret);
     }
@@ -3339,11 +3359,11 @@ public:
 // [X86Test_FuncCallRecursive]
 // ============================================================================
 
-class X86Test_FuncCallRecursive : public X86Test {
+class X86Test_FuncCallRecursive : public X86TestCase {
 public:
-  X86Test_FuncCallRecursive() : X86Test("FuncCallRecursive") {}
+  X86Test_FuncCallRecursive() : X86TestCase("FuncCallRecursive") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallRecursive());
   }
 
@@ -3361,9 +3381,11 @@ public:
     cc.mov(tmp, val);
     cc.dec(tmp);
 
-    FuncCallNode* call = cc.call(func->label(), FuncSignatureT<int, int>(CallConv::kIdHost));
-    call->setArg(0, tmp);
-    call->setRet(0, tmp);
+    InvokeNode* invokeNode;
+
+    cc.invoke(&invokeNode, func->label(), FuncSignatureT<int, int>(CallConv::kIdHost));
+    invokeNode->setArg(0, tmp);
+    invokeNode->setRet(0, tmp);
     cc.mul(cc.newInt32(), val, tmp);
 
     cc.bind(skip);
@@ -3389,11 +3411,11 @@ public:
 // [X86Test_FuncCallVarArg1]
 // ============================================================================
 
-class X86Test_FuncCallVarArg1 : public X86Test {
+class X86Test_FuncCallVarArg1 : public X86TestCase {
 public:
-  X86Test_FuncCallVarArg1() : X86Test("FuncCallVarArg1") {}
+  X86Test_FuncCallVarArg1() : X86TestCase("FuncCallVarArg1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallVarArg1());
   }
 
@@ -3413,15 +3435,16 @@ public:
     // We call `int func(size_t, ...)`
     //   - The `vaIndex` must be 1 (first argument after size_t).
     //   - The full signature of varargs (int, int, int, int) must follow.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<int, size_t, int, int, int, int>(CallConv::kIdHost, 1));
-    call->setArg(0, imm(4));
-    call->setArg(1, a0);
-    call->setArg(2, a1);
-    call->setArg(3, a2);
-    call->setArg(4, a3);
-    call->setRet(0, a0);
+    invokeNode->setArg(0, imm(4));
+    invokeNode->setArg(1, a0);
+    invokeNode->setArg(2, a1);
+    invokeNode->setArg(3, a2);
+    invokeNode->setArg(4, a3);
+    invokeNode->setRet(0, a0);
 
     cc.ret(a0);
     cc.endFunc();
@@ -3457,11 +3480,11 @@ public:
 // [X86Test_FuncCallVarArg2]
 // ============================================================================
 
-class X86Test_FuncCallVarArg2 : public X86Test {
+class X86Test_FuncCallVarArg2 : public X86TestCase {
 public:
-  X86Test_FuncCallVarArg2() : X86Test("FuncCallVarArg2") {}
+  X86Test_FuncCallVarArg2() : X86TestCase("FuncCallVarArg2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallVarArg2());
   }
 
@@ -3481,15 +3504,16 @@ public:
     // We call `double func(size_t, ...)`
     //   - The `vaIndex` must be 1 (first argument after size_t).
     //   - The full signature of varargs (double, double, double, double) must follow.
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)calledFunc),
       FuncSignatureT<double, size_t, double, double, double, double>(CallConv::kIdHost, 1));
-    call->setArg(0, imm(4));
-    call->setArg(1, a0);
-    call->setArg(2, a1);
-    call->setArg(3, a2);
-    call->setArg(4, a3);
-    call->setRet(0, a0);
+    invokeNode->setArg(0, imm(4));
+    invokeNode->setArg(1, a0);
+    invokeNode->setArg(2, a1);
+    invokeNode->setArg(3, a2);
+    invokeNode->setArg(4, a3);
+    invokeNode->setRet(0, a0);
 
     cc.ret(a0);
     cc.endFunc();
@@ -3522,14 +3546,76 @@ public:
 };
 
 // ============================================================================
+// [X86Test_FuncCallInt64Arg]
+// ============================================================================
+
+class X86Test_FuncCallInt64Arg : public X86TestCase {
+public:
+  X86Test_FuncCallInt64Arg() : X86TestCase("FuncCallInt64Arg") {}
+
+  static void add(TestApp& app) {
+    app.add(new X86Test_FuncCallInt64Arg());
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<uint64_t, uint64_t>(CallConv::kIdHost));
+
+    if (cc.is64Bit()) {
+      x86::Gp reg = cc.newUInt64();
+      cc.setArg(0, reg);
+      cc.add(reg, 1);
+      cc.ret(reg);
+    }
+    else {
+      x86::Gp hi = cc.newUInt32("hi");
+      x86::Gp lo = cc.newUInt32("lo");
+
+      cc.setArg(0, 0, lo);
+      cc.setArg(0, 1, hi);
+
+      cc.add(lo, 1);
+      cc.adc(hi, 0);
+      cc.ret(lo, hi);
+    }
+
+    cc.endFunc();
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef uint64_t (*Func)(uint64_t);
+    Func func = ptr_as_func<Func>(_func);
+
+    uint64_t resultRet = func(uint64_t(0xFFFFFFFF));
+    uint64_t expectRet = 0x100000000;
+
+    result.assignFormat("ret=%llu", (unsigned long long)resultRet);
+    expect.assignFormat("ret=%llu", (unsigned long long)expectRet);
+
+    return resultRet == expectRet;
+  }
+
+  static double calledFunc(size_t n, ...) {
+    double sum = 0;
+    va_list ap;
+    va_start(ap, n);
+    for (size_t i = 0; i < n; i++) {
+      double arg = va_arg(ap, double);
+      sum += arg;
+    }
+    va_end(ap);
+    return sum;
+  }
+};
+
+// ============================================================================
 // [X86Test_FuncCallMisc1]
 // ============================================================================
 
-class X86Test_FuncCallMisc1 : public X86Test {
+class X86Test_FuncCallMisc1 : public X86TestCase {
 public:
-  X86Test_FuncCallMisc1() : X86Test("FuncCallMisc1") {}
+  X86Test_FuncCallMisc1() : X86TestCase("FuncCallMisc1") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMisc1());
   }
 
@@ -3545,11 +3631,12 @@ public:
     cc.setArg(0, a);
     cc.setArg(1, b);
 
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)dummy),
       FuncSignatureT<void, int, int>(CallConv::kIdHost));
-    call->setArg(0, a);
-    call->setArg(1, b);
+    invokeNode->setArg(0, a);
+    invokeNode->setArg(1, b);
 
     cc.lea(r, x86::ptr(a, b));
     cc.ret(r);
@@ -3575,11 +3662,11 @@ public:
 // [X86Test_FuncCallMisc2]
 // ============================================================================
 
-class X86Test_FuncCallMisc2 : public X86Test {
+class X86Test_FuncCallMisc2 : public X86TestCase {
 public:
-  X86Test_FuncCallMisc2() : X86Test("FuncCallMisc2") {}
+  X86Test_FuncCallMisc2() : X86TestCase("FuncCallMisc2") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMisc2());
   }
 
@@ -3593,11 +3680,12 @@ public:
     cc.setArg(0, p);
     cc.movsd(arg, x86::ptr(p));
 
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)op),
       FuncSignatureT<double, double>(CallConv::kIdHost));
-    call->setArg(0, arg);
-    call->setRet(0, ret);
+    invokeNode->setArg(0, arg);
+    invokeNode->setRet(0, ret);
 
     cc.ret(ret);
     cc.endFunc();
@@ -3625,11 +3713,11 @@ public:
 // [X86Test_FuncCallMisc3]
 // ============================================================================
 
-class X86Test_FuncCallMisc3 : public X86Test {
+class X86Test_FuncCallMisc3 : public X86TestCase {
 public:
-  X86Test_FuncCallMisc3() : X86Test("FuncCallMisc3") {}
+  X86Test_FuncCallMisc3() : X86TestCase("FuncCallMisc3") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMisc3());
   }
 
@@ -3643,11 +3731,12 @@ public:
     cc.setArg(0, p);
     cc.movsd(arg, x86::ptr(p));
 
-    FuncCallNode* call = cc.call(
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode,
       imm((void*)op),
       FuncSignatureT<double, double>(CallConv::kIdHost));
-    call->setArg(0, arg);
-    call->setRet(0, ret);
+    invokeNode->setArg(0, arg);
+    invokeNode->setRet(0, ret);
 
     cc.xorps(arg, arg);
     cc.subsd(arg, ret);
@@ -3678,27 +3767,29 @@ public:
 // [X86Test_FuncCallMisc4]
 // ============================================================================
 
-class X86Test_FuncCallMisc4 : public X86Test {
+class X86Test_FuncCallMisc4 : public X86TestCase {
 public:
-  X86Test_FuncCallMisc4() : X86Test("FuncCallMisc4") {}
+  X86Test_FuncCallMisc4() : X86TestCase("FuncCallMisc4") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMisc4());
   }
 
   virtual void compile(x86::Compiler& cc) {
-    FuncSignatureBuilder funcPrototype;
-    funcPrototype.setCallConv(CallConv::kIdHost);
-    funcPrototype.setRet(Type::kIdF64);
-    cc.addFunc(funcPrototype);
+    InvokeNode* invokeNode;
 
-    FuncSignatureBuilder callPrototype;
-    callPrototype.setCallConv(CallConv::kIdHost);
-    callPrototype.setRet(Type::kIdF64);
-    FuncCallNode* call = cc.call(imm((void*)calledFunc), callPrototype);
+    FuncSignatureBuilder funcSignature;
+    funcSignature.setCallConv(CallConv::kIdHost);
+    funcSignature.setRet(Type::kIdF64);
+    cc.addFunc(funcSignature);
 
+    FuncSignatureBuilder invokeSignature;
+    invokeSignature.setCallConv(CallConv::kIdHost);
+    invokeSignature.setRet(Type::kIdF64);
+
+    cc.invoke(&invokeNode, imm((void*)calledFunc), invokeSignature);
     x86::Xmm ret = cc.newXmmSd("ret");
-    call->setRet(0, ret);
+    invokeNode->setRet(0, ret);
     cc.ret(ret);
 
     cc.endFunc();
@@ -3725,11 +3816,11 @@ public:
 // ============================================================================
 
 // The register allocator should clobber the register used by the `call` itself.
-class X86Test_FuncCallMisc5 : public X86Test {
+class X86Test_FuncCallMisc5 : public X86TestCase {
 public:
-  X86Test_FuncCallMisc5() : X86Test("FuncCallMisc5") {}
+  X86Test_FuncCallMisc5() : X86TestCase("FuncCallMisc5") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_FuncCallMisc5());
   }
 
@@ -3739,7 +3830,7 @@ public:
     x86::Gp pFn = cc.newIntPtr("pFn");
     x86::Gp vars[16];
 
-    uint32_t i, regCount = cc.gpCount();
+    uint32_t i, regCount = cc.arch() == Environment::kArchX86 ? 8 : 16;
     ASMJIT_ASSERT(regCount <= ASMJIT_ARRAY_SIZE(vars));
 
     cc.mov(pFn, imm((void*)calledFunc));
@@ -3752,7 +3843,9 @@ public:
       cc.mov(vars[i], 1);
     }
 
-    cc.call(pFn, FuncSignatureT<void>(CallConv::kIdHost));
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, pFn, FuncSignatureT<void>(CallConv::kIdHost));
+
     for (i = 1; i < regCount; i++)
       if (vars[i].isValid())
         cc.add(vars[0], vars[i]);
@@ -3778,14 +3871,75 @@ public:
 };
 
 // ============================================================================
+// [X86Test_FuncCallMisc6]
+// ============================================================================
+
+class X86Test_FuncCallMisc6 : public X86TestCase {
+public:
+  X86Test_FuncCallMisc6() : X86TestCase("FuncCallMisc6") {}
+
+  static void add(TestApp& app) {
+    app.add(new X86Test_FuncCallMisc6());
+  }
+
+  virtual void compile(x86::Compiler& cc) {
+    cc.addFunc(FuncSignatureT<uint32_t, uint32_t>(CallConv::kIdHost));
+
+    constexpr uint32_t kCount = 16;
+
+    x86::Gp v[kCount];
+    x86::Gp argVal = cc.newUInt32("argVal");
+    x86::Gp retVal = cc.newUInt32("retVal");
+    uint32_t i;
+
+    cc.setArg(0, argVal);
+    cc.add(argVal, 1);
+
+    for (i = 0; i < kCount; i++)
+      v[i] = cc.newUInt32("v%u", i);
+
+    InvokeNode* invokeNode;
+    cc.invoke(&invokeNode, imm((void*)calledFunc), FuncSignatureT<uint32_t, uint32_t>(CallConv::kIdHost));
+    invokeNode->setArg(0, argVal);
+    invokeNode->setRet(0, retVal);
+
+    for (i = 0; i < kCount; i++)
+      cc.mov(v[i], i + 1);
+
+    for (i = 0; i < kCount; i++)
+      cc.add(argVal, v[i]);
+
+    cc.add(retVal, argVal);
+    cc.ret(retVal);
+
+    cc.endFunc();
+  }
+
+  virtual bool run(void* _func, String& result, String& expect) {
+    typedef uint32_t (*Func)(uint32_t x);
+    Func func = ptr_as_func<Func>(_func);
+
+    uint32_t resultRet = func(111);
+    uint32_t expectRet = 111 + 112 + 2 + (1 + 16) * 8;
+
+    result.assignFormat("ret=%u", resultRet);
+    expect.assignFormat("ret=%u", expectRet);
+
+    return resultRet == expectRet;
+  }
+
+  static uint32_t calledFunc(uint32_t x) { return x + 1; }
+};
+
+// ============================================================================
 // [X86Test_MiscLocalConstPool]
 // ============================================================================
 
-class X86Test_MiscLocalConstPool : public X86Test {
+class X86Test_MiscLocalConstPool : public X86TestCase {
 public:
-  X86Test_MiscLocalConstPool() : X86Test("MiscLocalConstPool") {}
+  X86Test_MiscLocalConstPool() : X86TestCase("MiscLocalConstPool") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_MiscLocalConstPool());
   }
 
@@ -3824,11 +3978,11 @@ public:
 // [X86Test_MiscGlobalConstPool]
 // ============================================================================
 
-class X86Test_MiscGlobalConstPool : public X86Test {
+class X86Test_MiscGlobalConstPool : public X86TestCase {
 public:
-  X86Test_MiscGlobalConstPool() : X86Test("MiscGlobalConstPool") {}
+  X86Test_MiscGlobalConstPool() : X86TestCase("MiscGlobalConstPool") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_MiscGlobalConstPool());
   }
 
@@ -3867,10 +4021,10 @@ public:
 // [X86Test_MiscMultiRet]
 // ============================================================================
 
-struct X86Test_MiscMultiRet : public X86Test {
-  X86Test_MiscMultiRet() : X86Test("MiscMultiRet") {}
+struct X86Test_MiscMultiRet : public X86TestCase {
+  X86Test_MiscMultiRet() : X86TestCase("MiscMultiRet") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_MiscMultiRet());
   }
 
@@ -3959,11 +4113,11 @@ struct X86Test_MiscMultiRet : public X86Test {
 // [X86Test_MiscMultiFunc]
 // ============================================================================
 
-class X86Test_MiscMultiFunc : public X86Test {
+class X86Test_MiscMultiFunc : public X86TestCase {
 public:
-  X86Test_MiscMultiFunc() : X86Test("MiscMultiFunc") {}
+  X86Test_MiscMultiFunc() : X86TestCase("MiscMultiFunc") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_MiscMultiFunc());
   }
 
@@ -3979,10 +4133,11 @@ public:
       cc.setArg(0, a);
       cc.setArg(1, b);
 
-      FuncCallNode* call = cc.call(f2->label(), FuncSignatureT<int, int, int>(CallConv::kIdHost));
-      call->setArg(0, a);
-      call->setArg(1, b);
-      call->setRet(0, a);
+      InvokeNode* invokeNode;
+      cc.invoke(&invokeNode, f2->label(), FuncSignatureT<int, int, int>(CallConv::kIdHost));
+      invokeNode->setArg(0, a);
+      invokeNode->setArg(1, b);
+      invokeNode->setRet(0, a);
 
       cc.ret(a);
       cc.endFunc();
@@ -4024,11 +4179,11 @@ public:
 // Global (I didn't find a better way to test this).
 static jmp_buf globalJmpBuf;
 
-class X86Test_MiscUnfollow : public X86Test {
+class X86Test_MiscUnfollow : public X86TestCase {
 public:
-  X86Test_MiscUnfollow() : X86Test("MiscUnfollow") {}
+  X86Test_MiscUnfollow() : X86TestCase("MiscUnfollow") {}
 
-  static void add(X86TestApp& app) {
+  static void add(TestApp& app) {
     app.add(new X86Test_MiscUnfollow());
   }
 
@@ -4037,7 +4192,7 @@ public:
     // arguments will be passed by registers and there won't be any stack
     // misalignment when we call the `handler()`. This was failing on OSX
     // when targeting 32-bit.
-    cc.addFunc(FuncSignatureT<int, int, void*>(CallConv::kIdHostFastCall));
+    cc.addFunc(FuncSignatureT<int, int, void*>(CallConv::kIdFastCall));
 
     x86::Gp a = cc.newInt32("a");
     x86::Gp b = cc.newIntPtr("b");
@@ -4080,15 +4235,10 @@ public:
 };
 
 // ============================================================================
-// [Main]
+// [Export]
 // ============================================================================
 
-int main(int argc, char* argv[]) {
-  X86TestApp app;
-
-  app.handleArgs(argc, argv);
-  app.showInfo();
-
+void compiler_add_x86_tests(TestApp& app) {
   // Base tests.
   app.addT<X86Test_NoCode>();
   app.addT<X86Test_NoAlign>();
@@ -4100,7 +4250,8 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_JumpMany>();
   app.addT<X86Test_JumpUnreachable1>();
   app.addT<X86Test_JumpUnreachable2>();
-  app.addT<X86Test_JumpTable>();
+  app.addT<X86Test_JumpTable1>();
+  app.addT<X86Test_JumpTable2>();
 
   // Alloc tests.
   app.addT<X86Test_AllocBase>();
@@ -4123,6 +4274,7 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_AllocArgsIntPtr>();
   app.addT<X86Test_AllocArgsFloat>();
   app.addT<X86Test_AllocArgsDouble>();
+  app.addT<X86Test_AllocArgsVec>();
   app.addT<X86Test_AllocRetFloat1>();
   app.addT<X86Test_AllocRetFloat2>();
   app.addT<X86Test_AllocRetDouble1>();
@@ -4137,6 +4289,7 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_FuncCallBase2>();
   app.addT<X86Test_FuncCallStd>();
   app.addT<X86Test_FuncCallFast>();
+  app.addT<X86Test_FuncCallSIMD>();
   app.addT<X86Test_FuncCallLight>();
   app.addT<X86Test_FuncCallManyArgs>();
   app.addT<X86Test_FuncCallDuplicateArgs>();
@@ -4150,11 +4303,13 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_FuncCallRecursive>();
   app.addT<X86Test_FuncCallVarArg1>();
   app.addT<X86Test_FuncCallVarArg2>();
+  app.addT<X86Test_FuncCallInt64Arg>();
   app.addT<X86Test_FuncCallMisc1>();
   app.addT<X86Test_FuncCallMisc2>();
   app.addT<X86Test_FuncCallMisc3>();
   app.addT<X86Test_FuncCallMisc4>();
   app.addT<X86Test_FuncCallMisc5>();
+  app.addT<X86Test_FuncCallMisc6>();
 
   // Miscellaneous tests.
   app.addT<X86Test_MiscLocalConstPool>();
@@ -4162,6 +4317,6 @@ int main(int argc, char* argv[]) {
   app.addT<X86Test_MiscMultiRet>();
   app.addT<X86Test_MiscMultiFunc>();
   app.addT<X86Test_MiscUnfollow>();
-
-  return app.run();
 }
+
+#endif

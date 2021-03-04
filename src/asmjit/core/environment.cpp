@@ -22,38 +22,43 @@
 // 3. This notice may not be removed or altered from any source distribution.
 
 #include "../core/api-build_p.h"
-#include "../core/arch.h"
-#include "../core/func.h"
-#include "../core/type.h"
-
-#ifdef ASMJIT_BUILD_X86
-  #include "../x86/x86callconv_p.h"
-#endif
-
-#ifdef ASMJIT_BUILD_ARM
-  #include "../arm/armcallconv_p.h"
-#endif
+#include "../core/environment.h"
 
 ASMJIT_BEGIN_NAMESPACE
 
-// ============================================================================
-// [asmjit::CallConv - Init / Reset]
-// ============================================================================
+// X86 Target
+// ----------
+//
+//   - 32-bit - Linux, OSX, BSD, and apparently also Haiku guarantee 16-byte
+//              stack alignment. Other operating systems are assumed to have
+//              4-byte alignment by default for safety reasons.
+//   - 64-bit - stack must be aligned to 16 bytes.
+//
+// ARM Target
+// ----------
+//
+//   - 32-bit - Stack must be aligned to 8 bytes.
+//   - 64-bit - Stack must be aligned to 16 bytes (hardware requirement).
+uint32_t Environment::stackAlignment() const noexcept {
+  if (is64Bit()) {
+    // Assume 16-byte alignment on any 64-bit target.
+    return 16;
+  }
+  else {
+    // The following platforms use 16-byte alignment in 32-bit mode.
+    if (isPlatformLinux() ||
+        isPlatformBSD() ||
+        isPlatformApple() ||
+        isPlatformHaiku()) {
+      return 16u;
+    }
 
-ASMJIT_FAVOR_SIZE Error CallConv::init(uint32_t ccId) noexcept {
-  reset();
+    if (isFamilyARM())
+      return 8;
 
-#ifdef ASMJIT_BUILD_X86
-  if (CallConv::isX86Family(ccId))
-    return x86::CallConvInternal::init(*this, ccId);
-#endif
-
-#ifdef ASMJIT_BUILD_ARM
-  if (CallConv::isArmFamily(ccId))
-    return arm::CallConvInternal::init(*this, ccId);
-#endif
-
-  return DebugUtils::errored(kErrorInvalidArgument);
+    // Bail to 4-byte alignment if we don't know.
+    return 4;
+  }
 }
 
 ASMJIT_END_NAMESPACE
